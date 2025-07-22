@@ -1,0 +1,5 @@
+robotframework
+selenium
+robotframework-seleniumlibrary
+robotframework-browser
+webdriver-manager

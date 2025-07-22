@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Automation Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+    <!-- Lightgallery CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/lightgallery/2.7.2/css/lightgallery.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/lightgallery/2.7.2/css/lg-zoom.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/lightgallery/2.7.2/css/lg-fullscreen.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>🧪 Test Automation Dashboard</h1>
+        </header>
+
+        <!-- Summary Section -->
+        <section class="summary-section">
+            <div class="summary-grid">
+                <div class="summary-card total">
+                    <div class="card-icon">📊</div>
+                    <div class="card-content">
+                        <h3>Total Executed</h3>
+                        <div class="card-value" id="total-tests">0</div>
+                    </div>
+                </div>
+                <div class="summary-card passed">
+                    <div class="card-icon">✅</div>
+                    <div class="card-content">
+                        <h3>Passed</h3>
+                        <div class="card-value" id="passed-tests">0</div>
+                    </div>
+                </div>
+                <div class="summary-card failed">
+                    <div class="card-icon">❌</div>
+                    <div class="card-content">
+                        <h3>Failed</h3>
+                        <div class="card-value" id="failed-tests">0</div>
+                    </div>
+                </div>
+                <div class="summary-card rate">
+                    <div class="card-icon">📈</div>
+                    <div class="card-content">
+                        <h3>Pass Rate</h3>
+                        <div class="card-value" id="pass-rate">0%</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Chart Section -->
+        <section class="chart-section">
+            <div class="chart-container">
+                <h2>Latest Test Result</h2>
+                <div class="chart-flex-row">
+                    <div class="chart-left">
+                        <div class="chart-wrapper">
+                            <canvas id="pieChart" width="300" height="300"></canvas>
+                        </div>
+                    </div>
+                    <div class="chart-right">
+                        <div id="latest-status-badge"></div>
+                        <div id="latest-run-info" class="latest-run-info" style="margin-bottom: 10px;"></div>
+                        <div class="chart-actions">
+                            <button id="exportPdfBtn" class="btn btn-primary" style="margin-right: 10px;">
+                                <span style="font-size: 1.2em;">📄</span> Export PDF Report
+                            </button>
+                            <button id="robotReportBtn" class="btn btn-secondary">
+                                <span style="font-size: 1.2em;">🤖</span> Robot Report
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Content Section -->
+        <section class="main-content-section">
+            <div class="section-header">
+                <h2>📋 Test Run History</h2>
+                <div class="search-box">
+                     <!-- Search inputs will be handled by JS -->
+                    <input type="text" id="mainSearchInput" placeholder="🔍 Search...">
+                </div>
+            </div>
+
+            <!-- Tabs Navigation -->
+            <div class="tabs-container">
+                <div class="tab-buttons">
+                    <button class="tab-btn active" data-tab="timestamp">📅 By Timestamp</button>
+                    <button class="tab-btn" data-tab="feature">🔧 By Feature</button>
+                </div>
+            </div>
+
+            <!-- Table Header - will be dynamically updated by JS -->
+            <div class="table-container">
+                <table id="main-table-header">
+                    <thead id="main-thead">
+                        <!-- Header content will be injected by JS -->
+                    </thead>
+                </table>
+            </div>
+
+            <!-- Tab Content Area -->
+            <div class="tab-content-area">
+                <!-- Tab Content: By Timestamp -->
+                <div id="tab-timestamp" class="tab-content active">
+                    <div class="table-container" style="border-top: none; margin-top: -1px;">
+                        <table id="timestamp-table">
+                            <tbody id="timestamp-table-body">
+                                <!-- Timestamp accordion will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tab Content: By Feature -->
+                <div id="tab-feature" class="tab-content">
+                    <div class="table-container" style="border-top: none; margin-top: -1px;">
+                        <table id="feature-table">
+                            <tbody id="feature-table-body">
+                                <!-- Feature accordion will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- Modal for detailed view -->
+    <div id="detailModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Test Details</h2>
+                <span class="close" onclick="closeModal()">&times;</span>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- Modal content will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Export PDF options -->
+    <div id="exportPdfModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header">
+                <h2>Export Test Result Report</h2>
+                <span class="close" onclick="hideExportModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="exportPdfForm">
+                    <label><b>Export Scope:</b></label><br>
+                    <input type="radio" name="scope" value="latest" checked> Latest Run Only<br>
+                    <input type="radio" name="scope" value="date_range"> Custom Date Range<br>
+                    <div id="dateRangeFields" style="display:none; margin-left: 20px;">
+                        <label>From: <input type="date" name="start_date"></label><br>
+                        <label>To: <input type="date" name="end_date"></label><br>
+                    </div>
+                    <input type="radio" name="scope" value="features"> Specific Features<br>
+                    <div id="featureListFields" style="display:none; margin-left: 20px;">
+                        <div id="featureCheckboxList">Loading...</div>
+                    </div>
+                    <hr>
+                    <label><input type="checkbox" name="include_screenshots" checked> Include Screenshots</label><br>
+                    <label><input type="checkbox" name="include_details" checked> Include Test Details</label><br>
+                    <label><input type="checkbox" name="include_summary" checked> Include Summary Statistics</label><br>
+                </form>
+            </div>
+            <div class="modal-footer" style="text-align: right;">
+                <button class="btn btn-secondary" type="button" onclick="hideExportModal()">Cancel</button>
+                <button class="btn btn-primary" id="exportPdfSubmitBtn" type="button">Export</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lightgallery JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lightgallery/2.7.2/lightgallery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lightgallery/2.7.2/plugins/zoom/lg-zoom.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lightgallery/2.7.2/plugins/fullscreen/lg-fullscreen.min.js"></script>
+    
+    <script src="{{ url_for('static', filename='dashboard.js', v='8') }}"></script>
+</body>
+</html> 

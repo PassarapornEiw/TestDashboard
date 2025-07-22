@@ -1,0 +1,6 @@
+__pycache__/
+results/
+output.xml
+log.html
+report.html
+*.pyc
