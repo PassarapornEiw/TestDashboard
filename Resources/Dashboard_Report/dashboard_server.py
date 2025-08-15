@@ -8,6 +8,10 @@ from threading import Timer
 import io
 import tempfile
 from datetime import datetime
+import zipfile
+import threading
+import html
+import re
 
 # Check for required dependencies
 try:
@@ -17,6 +21,9 @@ try:
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.lib import colors
     from reportlab.lib.units import mm
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
     REPORTLAB_AVAILABLE = True
 except ImportError:
     print("⚠️ Warning: ReportLab not installed. PDF export will be disabled.")
@@ -32,11 +39,19 @@ except ImportError:
     MATPLOTLIB_AVAILABLE = False
 
 try:
-    from PIL import Image as PILImage
+    from PIL import Image as PILImage, ImageDraw, ImageFont
     PIL_AVAILABLE = True
 except ImportError:
     print("⚠️ Warning: PIL/Pillow not installed. Image processing will be disabled.")
     PIL_AVAILABLE = False
+
+# Optional: Playwright for HTML thumbnail rendering
+try:
+    from playwright.sync_api import sync_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except Exception:
+    print("⚠️ Warning: Playwright not available. HTML thumbnail generation disabled.")
+    PLAYWRIGHT_AVAILABLE = False
 
 app = Flask(__name__)
 
@@ -47,7 +62,168 @@ SERVER_DIR = Path(__file__).parent.resolve()
 PROJECT_ROOT = SERVER_DIR.parent.parent
 RESULTS_DIR = PROJECT_ROOT / "results"
 
+# PDF font configuration (try Unicode CID fonts first, then fallback to local/system Thai TTFs)
+PDF_FONT_NORMAL = 'Helvetica'
+PDF_FONT_BOLD = 'Helvetica-Bold'
+
+def setup_unicode_cid_fonts() -> bool:
+    """Try to register Unicode CID fonts that support Thai without external TTF files."""
+    global PDF_FONT_NORMAL, PDF_FONT_BOLD
+    if not REPORTLAB_AVAILABLE:
+        return False
+    try:
+        pdfmetrics.registerFont(UnicodeCIDFont('HeiseiMin-W3'))
+        pdfmetrics.registerFont(UnicodeCIDFont('HeiseiKakuGo-W5'))
+        PDF_FONT_NORMAL = 'HeiseiMin-W3'
+        PDF_FONT_BOLD = 'HeiseiKakuGo-W5'
+        print('[INFO] Using Unicode CID fonts: HeiseiMin-W3 / HeiseiKakuGo-W5')
+        return True
+    except Exception as e:
+        print(f'[WARN] Unicode CID fonts not available: {e}')
+        return False
+
+def _try_register_font(font_name: str, ttf_path: Path) -> bool:
+    try:
+        if ttf_path and ttf_path.exists():
+            pdfmetrics.registerFont(TTFont(font_name, str(ttf_path)))
+            return True
+    except Exception as e:
+        print(f"[WARN] Could not register font {ttf_path}: {e}")
+    return False
+
+def ensure_thai_fonts():
+    """Enable Thai in PDFs without manual font install when possible.
+    1) Try Unicode CID fonts (built-in). 2) Fallback to local/system Thai TTFs if present.
+    """
+    global PDF_FONT_NORMAL, PDF_FONT_BOLD
+    if not REPORTLAB_AVAILABLE:
+        return
+    try:
+        # Step 1: Unicode CID fonts
+        if setup_unicode_cid_fonts():
+            return
+
+        # Candidate font pairs (normal, bold, internal names)
+        candidates = [
+            ("THSarabunNew", "THSarabunNew.ttf", "THSarabunNew-Bold", "THSarabunNew Bold.ttf"),
+            ("NotoSansThai", "NotoSansThai-Regular.ttf", "NotoSansThai-Bold", "NotoSansThai-Bold.ttf"),
+            ("NotoSerifThai", "NotoSerifThai-Regular.ttf", "NotoSerifThai-Bold", "NotoSerifThai-Bold.ttf"),
+        ]
+        search_dirs = [
+            SERVER_DIR / 'fonts',
+            PROJECT_ROOT / 'fonts',
+            Path('C:/Windows/Fonts'),
+            Path('/usr/share/fonts'),
+            Path('/usr/local/share/fonts'),
+        ]
+        for family_name, normal_file, bold_name, bold_file in candidates:
+            normal_path = None
+            bold_path = None
+            for d in search_dirs:
+                if not normal_path:
+                    p = d / normal_file
+                    if p.exists():
+                        normal_path = p
+                if not bold_path:
+                    p = d / bold_file
+                    if p.exists():
+                        bold_path = p
+            if normal_path and bold_path:
+                norm_reg_name = f"{family_name}-Regular"
+                bold_reg_name = f"{family_name}-Bold"
+                if _try_register_font(norm_reg_name, normal_path) and _try_register_font(bold_reg_name, bold_path):
+                    PDF_FONT_NORMAL = norm_reg_name
+                    PDF_FONT_BOLD = bold_reg_name
+                    print(f"[INFO] Using Thai font: {normal_path.name}, {bold_path.name}")
+                    return
+        print("[WARN] No Thai font found. PDF will use Helvetica (may show squares for Thai). Place THSarabunNew or NotoSansThai in Resources/Dashboard_Report/fonts.")
+    except Exception as e:
+        print(f"[WARN] Font initialization failed: {e}")
+
+def escape_html_for_pdf(text):
+    """
+    Safely escape HTML/XML characters for use in ReportLab Paragraphs.
+    Also handles very long text by adding soft breaks.
+    Specially optimized for Thai text and very long content (10,000+ characters).
+    """
+    if not text or text in ['nan', 'none', '', 'None']:
+        return ''
+    
+    # Convert to string and strip
+    text = str(text).strip()
+    
+    # Log text statistics for debugging
+    text_length = len(text)
+    has_thai = any(ord(c) > 127 for c in text)
+    print(f"[DEBUG] Processing text for PDF: length={text_length}, has_non_ascii={has_thai}")
+    
+    # For extremely long text (>10,000 chars), truncate with warning
+    if text_length > 10000:
+        print(f"[WARNING] Very long text detected ({text_length} chars), truncating to 10,000 characters")
+        text = text[:10000] + "... [เนื้อหาถูกตัดทอนเนื่องจากมีความยาวมาก]"
+    
+    # Escape HTML/XML characters
+    text = html.escape(text)
+    
+    # Handle very long lines by adding soft breaks
+    # Use shorter line length for Thai text as it tends to be more dense
+    max_line_length = 80 if has_thai else 100
+    
+    lines = text.split('\n')
+    processed_lines = []
+    
+    for line in lines:
+        if len(line) > max_line_length:
+            # For Thai text, break more frequently as word boundaries are harder to detect
+            if has_thai:
+                # Break Thai text every 80 characters regardless of word boundaries
+                for i in range(0, len(line), max_line_length):
+                    chunk = line[i:i + max_line_length]
+                    processed_lines.append(chunk)
+            else:
+                # For English text, try to preserve word boundaries
+                words = line.split(' ')
+                current_line = []
+                current_length = 0
+                
+                for word in words:
+                    if current_length + len(word) + 1 > max_line_length and current_line:
+                        processed_lines.append(' '.join(current_line))
+                        current_line = [word]
+                        current_length = len(word)
+                    else:
+                        current_line.append(word)
+                        current_length += len(word) + 1
+                
+                if current_line:
+                    processed_lines.append(' '.join(current_line))
+        else:
+            processed_lines.append(line)
+    
+    result = '<br/>'.join(processed_lines)
+    print(f"[DEBUG] Text processing completed: original_length={text_length}, processed_length={len(result)}, lines={len(processed_lines)}")
+    return result
+
 # --- Helper Functions ---
+def sanitize_filename(name: str, replacement: str = "_") -> str:
+    """Return a filesystem and header safe filename.
+    Removes characters invalid on Windows or HTTP headers and collapses repeats.
+    """
+    if name is None:
+        return "file"
+    text = str(name)
+    # Remove path separators and illegal characters: \\/:*?"<>| and control chars
+    illegal_chars = "\\/:*?\"<>|\r\n\t"
+    for ch in illegal_chars:
+        text = text.replace(ch, replacement)
+    # Also guard against commas and semicolons in headers
+    for ch in [',', ';']:
+        text = text.replace(ch, replacement)
+    # Collapse repeats of replacement
+    while replacement * 2 in text:
+        text = text.replace(replacement * 2, replacement)
+    text = text.strip().strip('.')
+    return text or "file"
 def is_valid_timestamp_folder(folder_name):
     """Check if folder name is a valid timestamp format (YYYYMMDD-HHMMSS or YYYYMMDD_HHMMSS)."""
     if len(folder_name) != 15:
@@ -82,70 +258,7 @@ def extract_timestamp_from_path(path_obj):
         print(f"Error extracting timestamp from {path_obj}: {e}")
         return "unknown"
 
-def calculate_table_column_widths(data, min_widths, max_widths, total_width):
-    """Calculate responsive column widths based on content length."""
-    if not data or len(data) < 2:  # Need at least header + 1 row
-        return min_widths
-    
-    num_cols = len(data[0])
-    col_lengths = [0] * num_cols
-    
-    # Calculate average content length for each column
-    for row in data:
-        for i, cell in enumerate(row):
-            if i < num_cols:
-                content_length = len(str(cell)) if cell else 0
-                col_lengths[i] = max(col_lengths[i], content_length)
-    
-    # Calculate proportional widths based on content
-    total_content_length = sum(col_lengths)
-    if total_content_length == 0:
-        return min_widths
-    
-    calculated_widths = []
-    remaining_width = total_width
-    
-    for i, length in enumerate(col_lengths):
-        proportion = length / total_content_length
-        calculated_width = total_width * proportion
-        
-        # Apply min/max constraints
-        if i < len(min_widths):
-            calculated_width = max(calculated_width, min_widths[i])
-        if i < len(max_widths):
-            calculated_width = min(calculated_width, max_widths[i])
-        
-        calculated_widths.append(calculated_width)
-        remaining_width -= calculated_width
-    
-    # Distribute any remaining width proportionally
-    if remaining_width > 0:
-        for i in range(len(calculated_widths)):
-            calculated_widths[i] += remaining_width / len(calculated_widths)
-    
-    return calculated_widths
 
-def create_wrapped_paragraph(text, style, max_width=None):
-    """Create a Paragraph with proper word wrapping for table cells."""
-    if not text or str(text).strip() == '':
-        return Paragraph('', style)
-    
-    # Clean the text and ensure it's a string
-    clean_text = str(text).replace('\n', '<br/>').replace('\r', '')
-    
-    # For very long text, insert soft breaks at reasonable points
-    if len(clean_text) > 50:
-        words = clean_text.split(' ')
-        if len(words) > 8:
-            # Insert line breaks every 8-10 words for better wrapping
-            wrapped_words = []
-            for i, word in enumerate(words):
-                wrapped_words.append(word)
-                if i > 0 and (i + 1) % 8 == 0 and i < len(words) - 1:
-                    wrapped_words.append('<br/>')
-            clean_text = ' '.join(wrapped_words)
-    
-    return Paragraph(clean_text, style)
 
 def find_excel_files(base_dir):
     """Finds all relevant feature excel files in valid timestamp directories only."""
@@ -183,6 +296,36 @@ def safe_str_lower(series):
     except Exception:
         return pd.Series(series).fillna('').astype(str).str.lower()
 
+def find_first_column(headers, candidates):
+    """Return the first column name found from candidates list (case-sensitive as Excel provides), or None."""
+    for name in candidates:
+        if name in headers:
+            return name
+    return None
+
+def filter_executed_rows(df):
+    """Return DataFrame filtered by Execute == 'Y' if column exists; otherwise original df."""
+    try:
+        execute_column = next((c for c in df.columns if c.lower() == 'execute'), None)
+        if execute_column:
+            temp = df.copy()
+            temp[execute_column] = temp[execute_column].fillna('')
+            return temp[temp[execute_column].astype(str).str.lower() == 'y'].copy()
+        return df
+    except Exception:
+        return df
+
+def get_row_by_id(df, id_candidates, target_id):
+    """Return the row that matches target_id using the first available id column. Exact match only; None if not found."""
+    id_col = find_first_column(df.columns, id_candidates)
+    if not id_col:
+        return None
+    for _, row in df.iterrows():
+        row_id = str(row.get(id_col, '')).strip()
+        if row_id == str(target_id).strip():
+            return row
+    return None
+
 def get_test_case_description(excel_path, test_case_id):
     """
     Extracts test case description from Excel file based on test case ID.
@@ -194,6 +337,10 @@ def get_test_case_description(excel_path, test_case_id):
             return None
             
         df = pd.read_excel(excel_path)
+        try:
+            print(f"[DEBUG][Excel Load] path={excel_path} rows={len(df)} cols={len(df.columns)} headers={list(df.columns)}")
+        except Exception:
+            pass
         
         if df.empty:
             return None
@@ -206,8 +353,8 @@ def get_test_case_description(excel_path, test_case_id):
                 id_col = col
                 break
         
-        # Look for description column (common variations)
-        desc_columns = ['Test Case Description', 'TestCaseDescription', 'Description', 'Test Description', 'Name']
+        # Look for description column (common variations) - do NOT use 'Name' (often holds ID)
+        desc_columns = ['Test Case Description', 'TestCaseDescription', 'Description', 'Test Description', 'Scenario', 'Title']
         desc_col = None
         for col in desc_columns:
             if col in df.columns:
@@ -215,20 +362,23 @@ def get_test_case_description(excel_path, test_case_id):
                 break
         
         if id_col and desc_col:
-            # Convert test_case_id to string for comparison
+            # Normalize for matching
             test_case_id_str = str(test_case_id).strip()
-            
-            # Find the row with matching test case ID
-            df[id_col] = df[id_col].fillna('')
-            matching_rows = df[safe_str_lower(df[id_col]).str.contains(test_case_id_str.lower(), case=False, na=False)]
-            if not matching_rows.empty:
-                desc_value = matching_rows.iloc[0][desc_col]
-                return str(desc_value) if pd.notna(desc_value) else None
-        
-                    # Fallback: exact match
-        for _, row in df.iterrows():
-            row_id = row.get(id_col, '')
-            if pd.notna(row_id) and str(row_id).strip() == test_case_id_str:
+            df[id_col] = df[id_col].fillna('').astype(str)
+            norm_series = df[id_col].str.strip().str.casefold()
+            target = test_case_id_str.casefold()
+
+            # 1) Exact match first (case-insensitive)
+            exact_mask = norm_series == target
+            if exact_mask.any():
+                row = df[exact_mask].iloc[0]
+                desc_value = row.get(desc_col, '')
+                return str(desc_value) if pd.notna(desc_value) and str(desc_value).strip() else None
+
+            # 2) Fuzzy fallback: startswith id (e.g., TC001_1234)
+            starts_mask = norm_series.str.startswith(target + '_') | norm_series.str.startswith(target + '-')
+            if starts_mask.any():
+                row = df[starts_mask].iloc[0]
                 desc_value = row.get(desc_col, '')
                 return str(desc_value) if pd.notna(desc_value) and str(desc_value).strip() else None
         
@@ -288,13 +438,12 @@ def parse_excel_data(excel_path):
                 execute_column = col
                 break
                 
-        if execute_column:
-            # Keep rows where Execute column is 'y' (case-insensitive) and non-empty
-            df[execute_column] = df[execute_column].fillna('')
-            executable_df = df[safe_str_lower(df[execute_column]) == 'y'].copy()
-        else:
-            # If no Execute column, assume all tests are executable
-            executable_df = df.copy()
+        # Use common filter helper
+        executable_df = filter_executed_rows(df)
+        try:
+            print(f"[DEBUG][Execute Filter] execute_col={execute_column} before={len(df)} after={len(executable_df)}")
+        except Exception:
+            pass
 
         if executable_df.empty:
             print(f"No executable tests found in {excel_path}")
@@ -317,6 +466,10 @@ def parse_excel_data(excel_path):
         passed = int(pass_mask.sum())
         failed = int(fail_mask.sum())
         total = passed + failed
+        try:
+            print(f"[DEBUG][Status Count] status_col={status_column} total={total} passed={passed} failed={failed}")
+        except Exception:
+            pass
         
         pass_rate = (passed / total * 100) if total > 0 else 0
         
@@ -332,9 +485,9 @@ def parse_excel_data(excel_path):
         excel_dir = excel_path_obj.parent  # This should be the feature folder (e.g., Transfer/)
         image_paths = []
         try:
-            # Search for images in the feature directory and all subdirectories (TC001, TC002, etc.)
-            image_extensions = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp"]
-            for ext in image_extensions:
+            # Search for images and HTML in the feature directory and all subdirectories (TC001, TC002, etc.)
+            evidence_patterns = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.html", "*.htm"]
+            for ext in evidence_patterns:
                 image_paths.extend(list(excel_dir.glob(f"**/{ext}")))
             
             print(f"[DEBUG] Found {len(image_paths)} images in {excel_dir}")
@@ -458,7 +611,7 @@ def excel_preview():
         df = pd.read_excel(full_path)
         
         # Convert to JSON-serializable format with correct field names
-        rows_data = df.head(10).fillna('').astype(str).to_dict('records')
+        rows_data = df.fillna('').astype(str).to_dict('records')
         preview_data = {
             "headers": df.columns.tolist(),  # JavaScript expects 'headers'
             "rows": rows_data,               # JavaScript expects 'rows'
@@ -473,7 +626,7 @@ def excel_preview():
 def export_pdf():
     """Export test results to PDF with enhanced formatting and optional screenshots."""
     if not REPORTLAB_AVAILABLE:
-        return jsonify({'error': 'PDF export not available. ReportLab not installed.'}), 500
+        return jsonify({'error': 'PDF download not available. ReportLab not installed.'}), 500
         
     try:
         options = request.get_json()
@@ -543,7 +696,7 @@ def export_pdf():
         title_style.fontSize = 18  # Reduced from 24pt to 18pt as requested
         title_style.spaceAfter = 25
         title_style.textColor = colors.HexColor("#8B4513")
-        title_style.fontName = 'Helvetica-Bold'  # Will switch to Arial below
+        title_style.fontName = PDF_FONT_BOLD
         title_style.alignment = 1  # Center alignment
         
         # Banking professional heading style (Section headers)
@@ -551,7 +704,7 @@ def export_pdf():
         heading_style.fontSize = 14  # Reduced from 16pt to 14pt as requested
         heading_style.spaceAfter = 15
         heading_style.textColor = colors.HexColor("#8B4513")  # Deep brown-gold
-        heading_style.fontName = 'Helvetica-Bold'  # Will switch to Arial below
+        heading_style.fontName = PDF_FONT_BOLD
         heading_style.borderWidth = 1
         heading_style.borderColor = colors.HexColor("#D4AF37")
         heading_style.borderPadding = 8
@@ -562,8 +715,8 @@ def export_pdf():
         subheading_style.fontSize = 12  # Reduced from 14pt to 12pt as requested
         subheading_style.spaceAfter = 12
         subheading_style.textColor = colors.HexColor("#DAA520")  # Golden rod
-        subheading_style.fontName = 'Helvetica-Bold'  # Will switch to Arial below
-        subheading_style.leftIndent = 10
+        subheading_style.fontName = PDF_FONT_BOLD
+        subheading_style.alignment = 1  # Center alignment
         subheading_style.borderWidth = 0
         subheading_style.borderColor = colors.HexColor("#D4AF37")
         subheading_style.borderPadding = 5
@@ -573,7 +726,7 @@ def export_pdf():
         feature_style.fontSize = 12  # Changed from 16pt to 12pt for subsection headers
         feature_style.spaceAfter = 15
         feature_style.textColor = colors.HexColor("#B8860B")
-        feature_style.fontName = 'Helvetica-Bold'  # Will switch to Arial below
+        feature_style.fontName = PDF_FONT_BOLD
         feature_style.leftIndent = 5
         feature_style.borderWidth = 1
         feature_style.borderColor = colors.HexColor("#D4AF37")
@@ -584,14 +737,14 @@ def export_pdf():
         normal_style = styles['Normal'].clone('BrandNormalStyle')
         normal_style.fontSize = 10  # Reduced from 11pt to 10pt as requested
         normal_style.textColor = colors.HexColor("#2F4F4F")
-        normal_style.fontName = 'Helvetica'  # Will switch to Arial below
+        normal_style.fontName = PDF_FONT_NORMAL
         normal_style.leading = 12  # 1.2x line spacing (10pt * 1.2 = 12pt)
         
         # Create caption style for screenshot counts (9pt Regular as requested)
         caption_style = styles['Normal'].clone('CaptionStyle')
         caption_style.fontSize = 9  # Screenshot captions: 9pt Regular as requested
         caption_style.textColor = colors.HexColor("#666666")
-        caption_style.fontName = 'Helvetica'  # Will be Arial when supported
+        caption_style.fontName = PDF_FONT_NORMAL
         caption_style.leading = 11  # 1.2x line spacing (9pt * 1.2 = 11pt)
 
         # === HEADER SECTION WITH BANKING BRAND ===
@@ -616,15 +769,13 @@ def export_pdf():
         
         # Professional report metadata with golden borders
         metadata_data = [
-            ["Generated:", datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
-            ["Report Period:", "Latest Run" if scope == "latest" else f"{start_date or 'Start'} to {end_date or 'End'}"],
+            ["Execution Time:", datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
             ["Total Features:", str(sum(len(run['features']) for run in runs_to_export))],
-            ["Execution Time:", runs_to_export[0]['timestamp'] if runs_to_export else "N/A"]
         ]
         
         metadata_table = Table(metadata_data, colWidths=[140, 220])
         metadata_table.setStyle(TableStyle([
-            ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),  # Will be Arial-Bold when supported
+            ('FONTNAME', (0,0), (-1,-1), PDF_FONT_BOLD),
             ('FONTSIZE', (0,0), (-1,-1), 9),  # Reduced to 9pt for metadata
             ('ALIGN', (0,0), (0,-1), 'RIGHT'),
             ('ALIGN', (1,0), (1,-1), 'LEFT'),
@@ -662,12 +813,12 @@ def export_pdf():
                 # Header styling - matches other tables
                 ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#8B4513")),
                 ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('FONTNAME', (0,0), (-1,0), PDF_FONT_BOLD),
                 ('FONTSIZE', (0,0), (-1,0), 10),
                 ('ALIGN', (0,0), (-1,0), 'CENTER'),
                 
                 # Data row styling with color coding
-                ('FONTNAME', (0,1), (-1,1), 'Helvetica-Bold'),
+                ('FONTNAME', (0,1), (-1,1), PDF_FONT_BOLD),
                 ('FONTSIZE', (0,1), (-1,1), 14),
                 ('ALIGN', (0,1), (-1,1), 'CENTER'),
                 ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
@@ -757,6 +908,14 @@ def export_pdf():
         unique_features = {}
         for run in runs_to_export:
             for feature in run['features']:
+                # Ensure test_evidence present for this feature by re-parsing if needed
+                try:
+                    if not feature.get('test_evidence'):
+                        reparsed = parse_excel_data(PROJECT_ROOT / feature['excel_path'])
+                        if reparsed and reparsed.get('test_evidence'):
+                            feature['test_evidence'] = reparsed['test_evidence']
+                except Exception:
+                    pass
                 feature_key = f"{feature['feature_name']}_{run['timestamp']}"
                 if feature_key not in unique_features:
                     unique_features[feature_key] = feature
@@ -768,13 +927,13 @@ def export_pdf():
             # Create cell styles for different column types
             feature_name_style = normal_style.clone('FeatureNameStyle')
             feature_name_style.fontSize = 9
-            feature_name_style.fontName = 'Helvetica-Bold'
+            feature_name_style.fontName = PDF_FONT_BOLD
             feature_name_style.textColor = colors.HexColor("#8B4513")
             feature_name_style.alignment = 0  # Left align
             
             status_style = normal_style.clone('StatusStyle')
             status_style.fontSize = 9
-            status_style.fontName = 'Helvetica-Bold'
+            status_style.fontName = PDF_FONT_BOLD
             status_style.alignment = 1  # Center align
             
             number_style = normal_style.clone('NumberStyle')
@@ -815,7 +974,7 @@ def export_pdf():
                 ('ALIGN', (0,0), (-1,0), 'CENTER'),
                 
                 # Data rows styling with proper alignment
-                ('FONTNAME', (0,1), (-1,-1), 'Helvetica'),
+                ('FONTNAME', (0,1), (-1,-1), PDF_FONT_NORMAL),
                 ('FONTSIZE', (0,1), (-1,-1), 9),
                 ('ALIGN', (0,1), (0,-1), 'LEFT'),    # Feature names left-aligned
                 ('ALIGN', (1,1), (1,-1), 'CENTER'),  # Status centered
@@ -823,7 +982,7 @@ def export_pdf():
                 ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
                 
                 # Feature column bold font for consistency
-                ('FONTNAME', (0,1), (0,-1), 'Helvetica-Bold'),
+                ('FONTNAME', (0,1), (0,-1), PDF_FONT_BOLD),
                 
                 # Enhanced borders with Krungsri golden theme
                 ('BOX', (0,0), (-1,-1), 2, colors.HexColor("#D4AF37")),
@@ -883,30 +1042,17 @@ def export_pdf():
                             df = pd.read_excel(excel_path)
                             
                             # Find relevant columns
-                            status_col = None
-                            for col in df.columns:
-                                if col.lower() in ['testresult', 'status', 'result']:
-                                    status_col = col
-                                    break
-                            
-                            name_col = None
-                            for col in df.columns:
-                                if col.lower() in ['testcasedescription', 'test case description', 'testcase', 'name']:
-                                    name_col = col
-                                    break
+                            status_col = next((c for c in df.columns if c.lower() in ['testresult', 'status', 'result']), None)
+                            name_col = next((c for c in df.columns if c.lower() in ['testcasedescription', 'test case description', 'testcase', 'name']), None)
                             if not name_col:
                                 name_col = df.columns[0]
                             
-                            error_col = None
-                            for col in df.columns:
-                                if col.lower() in ['fail_description', 'testresult_description', 'result description', 'error', 'message', 'failure reason']:
-                                    error_col = col
-                                    break
+                            error_col = next((c for c in df.columns if c.lower() in ['fail_description', 'testresult_description', 'result description', 'error', 'message', 'failure reason']), None)
                             
                             # Filter for executed tests only
-                            execute_column = next((c for c in df.columns if c.lower() == 'execute'), None)
-                            if execute_column:
-                                df = df[df[execute_column].str.lower() == 'y'].copy()
+                            df = filter_executed_rows(df)
+
+                            # (Removed: not needed in failed cases section)
                             
                             # Find failed test cases
                             if status_col:
@@ -930,7 +1076,7 @@ def export_pdf():
             # Create cell styles for failed cases table
             failed_feature_style = normal_style.clone('FailedFeatureStyle')
             failed_feature_style.fontSize = 8
-            failed_feature_style.fontName = 'Helvetica-Bold'
+            failed_feature_style.fontName = PDF_FONT_BOLD
             failed_feature_style.textColor = colors.HexColor("#8B4513")
             failed_feature_style.alignment = 0  # Left align
             
@@ -948,62 +1094,79 @@ def export_pdf():
             failed_table_data = [["Feature", "Test Case", "Fail Description"]]
             
             for case in failed_cases:
-                # Create Paragraph objects for better text wrapping
+                # Truncate long text to prevent table overflow
+                feature_name = str(case[0])[:20] + "..." if len(str(case[0])) > 20 else str(case[0])
+                test_case_name = str(case[1])[:30] + "..." if len(str(case[1])) > 30 else str(case[1])
+                error_msg = str(case[2])[:50] + "..." if len(str(case[2])) > 50 else str(case[2])
+                
+                # Create Paragraph objects with smaller font sizes
                 feature_style = normal_style.clone('FeatureWrapStyle')
-                feature_style.fontSize = 9
+                feature_style.fontSize = 8
                 feature_style.textColor = colors.HexColor("#8B4513")
-                feature_style.fontName = 'Helvetica-Bold'
-                feature_para = Paragraph(str(case[0]), feature_style)
+                feature_style.fontName = PDF_FONT_BOLD
+                feature_para = Paragraph(feature_name, feature_style)
                 
-                # Test case with enhanced wrapping for long descriptions
+                # Test case with smaller font
                 test_case_style = normal_style.clone('TestCaseWrapStyle')
-                test_case_style.fontSize = 9
-                test_case_style.leading = 11  # Better line spacing
+                test_case_style.fontSize = 8
+                test_case_style.leading = 10  # Reduced line spacing
                 test_case_style.textColor = colors.HexColor("#2F4F4F")
-                test_case_para = Paragraph(str(case[1]), test_case_style)
+                test_case_para = Paragraph(test_case_name, test_case_style)
                 
-                # Fail description with word wrapping
+                # Fail description with smaller font
                 fail_desc_style = normal_style.clone('FailDescWrapStyle') 
-                fail_desc_style.fontSize = 9
+                fail_desc_style.fontSize = 8
                 fail_desc_style.textColor = colors.HexColor("#B71C1C")
-                fail_desc_style.leading = 11
-                fail_desc_para = Paragraph(str(case[2]), fail_desc_style)
+                fail_desc_style.leading = 10
+                fail_desc_para = Paragraph(error_msg, fail_desc_style)
                 
                 failed_table_data.append([feature_para, test_case_para, fail_desc_para])
             
-            # Create failed cases table with improved column widths
-            failed_table = Table(failed_table_data, colWidths=[80, 180, 160], repeatRows=1)
+            # Create failed cases table with improved column widths and better size management
+            # Use smaller column widths to prevent overflow
+            failed_table = Table(failed_table_data, colWidths=[70, 150, 140], repeatRows=1)
             failed_table.setStyle(TableStyle([
                 # Header styling
                 ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#8B4513")),
                 ('TEXTCOLOR', (0,0), (-1,0), colors.white),
                 ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0,0), (-1,0), 9),
+                ('FONTSIZE', (0,0), (-1,0), 8),  # Reduced font size
                 ('ALIGN', (0,0), (-1,0), 'CENTER'),
                 
-                # Data rows styling with improved font size
+                # Data rows styling with smaller font size
                 ('FONTNAME', (0,1), (-1,-1), 'Helvetica'),
-                ('FONTSIZE', (0,1), (-1,-1), 9),  # Increased from 8pt to 9pt
+                ('FONTSIZE', (0,1), (-1,-1), 8),  # Reduced font size
                 ('ALIGN', (0,1), (-1,-1), 'LEFT'),
                 ('VALIGN', (0,0), (-1,-1), 'TOP'),
                 
                 # Professional borders and colors
-                ('BOX', (0,0), (-1,-1), 2, colors.HexColor("#D4AF37")),
+                ('BOX', (0,0), (-1,-1), 1, colors.HexColor("#D4AF37")),  # Reduced border width
                 ('INNERGRID', (0,0), (-1,-1), 1, colors.HexColor("#D4AF37")),
-                ('LINEBELOW', (0,0), (-1,0), 2, colors.HexColor("#B8860B")),
+                ('LINEBELOW', (0,0), (-1,0), 1, colors.HexColor("#B8860B")),  # Reduced border width
                 
                 # Alternating row colors
                 ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor("#FFFEF7"), colors.HexColor("#FFF8DC")]),
                 
-                # Enhanced padding for better text spacing and multi-line support
-                ('TOPPADDING', (0,0), (-1,0), 8),      # Header padding
-                ('BOTTOMPADDING', (0,0), (-1,0), 8),   # Header padding
-                ('TOPPADDING', (0,1), (-1,-1), 10),    # Data rows - more space for wrapped text
-                ('BOTTOMPADDING', (0,1), (-1,-1), 10), # Data rows - more space for wrapped text
-                ('LEFTPADDING', (0,0), (-1,-1), 8),
-                ('RIGHTPADDING', (0,0), (-1,-1), 8),
+                # Reduced padding to save space
+                ('TOPPADDING', (0,0), (-1,0), 6),      # Header padding
+                ('BOTTOMPADDING', (0,0), (-1,0), 6),   # Header padding
+                ('TOPPADDING', (0,1), (-1,-1), 6),     # Data rows - reduced padding
+                ('BOTTOMPADDING', (0,1), (-1,-1), 6),  # Data rows - reduced padding
+                ('LEFTPADDING', (0,0), (-1,-1), 6),
+                ('RIGHTPADDING', (0,0), (-1,-1), 6),
             ]))
-            elements.append(failed_table)
+            
+            # Add table with page break handling
+            try:
+                elements.append(failed_table)
+            except Exception as table_error:
+                print(f"Table overflow error, trying to split: {table_error}")
+                # If table is too large, try to split it into smaller chunks
+                elements.append(Paragraph("FAILED TEST CASES (Table too large, showing summary only)", heading_style))
+                for i, case in enumerate(failed_cases[:5]):  # Show only first 5 cases
+                    elements.append(Paragraph(f"• {case[0]}: {case[1]}", normal_style))
+                if len(failed_cases) > 5:
+                    elements.append(Paragraph(f"... and {len(failed_cases) - 5} more failed cases", normal_style))
             elements.append(Spacer(1, 25))
 
         # === SCREENSHOTS SECTION (Optional) ===
@@ -1024,9 +1187,7 @@ def export_pdf():
                         try:
                             df = pd.read_excel(excel_path)
                             # Filter for executed tests only
-                            execute_column = next((c for c in df.columns if c.lower() == 'execute'), None)
-                            if execute_column:
-                                df = df[df[execute_column].str.lower() == 'y'].copy()
+                            df = filter_executed_rows(df)
                         except Exception as e:
                             df = None
                     
@@ -1110,7 +1271,7 @@ def export_pdf():
                                                 error_style = styles['Normal'].clone('ErrorStyle')
                                                 error_style.fontSize = 10
                                                 error_style.textColor = colors.HexColor("#dc3545")
-                                                error_style.fontName = 'Helvetica-Bold'
+                                                error_style.fontName = PDF_FONT_BOLD
                                                 error_style.leftIndent = 12
                                                 error_style.rightIndent = 12
                                                 error_style.spaceBefore = 8
@@ -1128,90 +1289,88 @@ def export_pdf():
                                 
                                 # Handle screenshots
                                 if images:
-                                    # Filter images to only include those with "PDF" in the filename
-                                    pdf_images = [img for img in images if 'PDF' in img.upper()]
+                                    # Show all screenshots, not just PDF ones
+                                    all_images = images
                                     
-                                    elements.append(Paragraph(f"Total Screenshots: {len(pdf_images)}", caption_style))
+                                    elements.append(Paragraph(f"Total Screenshots: {len(all_images)}", caption_style))
                                     elements.append(Spacer(1, 8))
                                     
-                                    # --- Centered high-quality image grid ---
-                                    if pdf_images:
-                                        # Process images in batches to create centered layout
-                                        for i in range(0, len(pdf_images), 2):
-                                            batch_images = pdf_images[i:i+2]
-                                            grid_imgs = []
-                                            
-                                            for img_path in batch_images:
-                                                img_abs = PROJECT_ROOT / img_path
-                                                if img_abs.exists():
-                                                    try:
-                                                        # Use PIL Image to process, ReportLab Image for PDF
-                                                        if PIL_AVAILABLE:
-                                                            with PILImage.open(str(img_abs)) as pil_img:
-                                                                # Calculate optimal size maintaining aspect ratio
-                                                                original_width, original_height = pil_img.size
-                                                                max_width, max_height = 320, 240  # Moderate size for better layout
-                                                                
-                                                                # Calculate scaling factor to maintain aspect ratio
-                                                                width_ratio = max_width / original_width
-                                                                height_ratio = max_height / original_height
-                                                                scale_ratio = min(width_ratio, height_ratio)
-                                                                
-                                                                new_width = int(original_width * scale_ratio)
-                                                                new_height = int(original_height * scale_ratio)
-                                                                
-                                                                # Resize with high-quality resampling
-                                                                pil_img = pil_img.resize((new_width, new_height), PILImage.Resampling.LANCZOS)
-                                                                
-                                                                # Convert to RGB if necessary and save with high quality
-                                                                if pil_img.mode in ('RGBA', 'LA', 'P'):
-                                                                    rgb_img = PILImage.new('RGB', pil_img.size, (255, 255, 255))
-                                                                    if pil_img.mode == 'P':
-                                                                        pil_img = pil_img.convert('RGBA')
-                                                                    rgb_img.paste(pil_img, mask=pil_img.split()[-1] if pil_img.mode in ('RGBA', 'LA') else None)
-                                                                    pil_img = rgb_img
-                                                                
-                                                                with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_img:
-                                                                    pil_img.save(temp_img.name, format='JPEG', quality=95, optimize=True, dpi=(300, 300))
-                                                                    # Use calculated dimensions with proper scaling
-                                                                    grid_imgs.append(ReportLabImage(temp_img.name, width=new_width*0.8, height=new_height*0.8))
-                                                        else:
-                                                            # Fallback: use original image with moderate dimensions
-                                                            grid_imgs.append(ReportLabImage(str(img_abs), width=240, height=180))
-                                                    except Exception as e:
-                                                        print(f"Error processing image {img_path}: {e}")
-                                                        grid_imgs.append(Paragraph(f"Error loading image: {img_path}", normal_style))
-                                                else:
-                                                    grid_imgs.append(Paragraph(f"Image not found: {img_path}", normal_style))
-                                            
-                                            # Create table with appropriate column configuration
-                                            if len(batch_images) == 1:
-                                                # Single image - center it
-                                                img_table = Table([grid_imgs], colWidths=[250])
-                                                img_table.setStyle(TableStyle([
-                                                    ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-                                                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                                                    ('LEFTPADDING', (0,0), (-1,-1), 0),
-                                                    ('RIGHTPADDING', (0,0), (-1,-1), 0),
-                                                    ('TOPPADDING', (0,0), (-1,-1), 10),
-                                                    ('BOTTOMPADDING', (0,0), (-1,-1), 10),
-                                                ]))
+                                    # --- High-quality image grid with original resolution and captions ---
+                                    if all_images:
+                                        # Process images one by one to maintain original resolution
+                                        for img_path in all_images:
+                                            img_abs = PROJECT_ROOT / img_path
+                                            if img_abs.exists():
+                                                try:
+                                                    # Get image filename for caption
+                                                    img_filename = img_path.split('/')[-1]
+                                                    
+                                                    # Use PIL Image to process, ReportLab Image for PDF
+                                                    if PIL_AVAILABLE:
+                                                        with PILImage.open(str(img_abs)) as pil_img:
+                                                            # Get original dimensions
+                                                            original_width, original_height = pil_img.size
+                                                            
+                                                            # Calculate maximum dimensions for PDF (maintain aspect ratio)
+                                                            max_width_pdf = 500  # Maximum width in points
+                                                            max_height_pdf = 400  # Maximum height in points
+                                                            
+                                                            # Calculate scaling factor to maintain aspect ratio
+                                                            width_ratio = max_width_pdf / original_width
+                                                            height_ratio = max_height_pdf / original_height
+                                                            scale_ratio = min(width_ratio, height_ratio)
+                                                            
+                                                            # Calculate final dimensions for PDF
+                                                            pdf_width = original_width * scale_ratio
+                                                            pdf_height = original_height * scale_ratio
+                                                            
+                                                            # Convert to RGB if necessary and save with high quality
+                                                            if pil_img.mode in ('RGBA', 'LA', 'P'):
+                                                                rgb_img = PILImage.new('RGB', pil_img.size, (255, 255, 255))
+                                                                if pil_img.mode == 'P':
+                                                                    pil_img = pil_img.convert('RGBA')
+                                                                rgb_img.paste(pil_img, mask=pil_img.split()[-1] if pil_img.mode in ('RGBA', 'LA') else None)
+                                                                pil_img = rgb_img
+                                                            
+                                                            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_img:
+                                                                pil_img.save(temp_img.name, format='JPEG', quality=75, optimize=True, dpi=(150, 150))
+                                                                # Use original resolution with calculated PDF dimensions
+                                                                reportlab_img = ReportLabImage(temp_img.name, width=pdf_width, height=pdf_height)
+                                                    else:
+                                                        # Fallback: use original image with moderate dimensions
+                                                        reportlab_img = ReportLabImage(str(img_abs), width=400, height=300)
+                                                    
+                                                    # Create image with caption
+                                                    img_with_caption = [
+                                                        [reportlab_img],
+                                                        [Paragraph(f"<b>Filename:</b> {img_filename}", caption_style)]
+                                                    ]
+                                                    
+                                                    # Create table for image and caption
+                                                    img_table = Table(img_with_caption, colWidths=[pdf_width if PIL_AVAILABLE else 400])
+                                                    img_table.setStyle(TableStyle([
+                                                        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                                                        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                                                        ('LEFTPADDING', (0,0), (-1,-1), 0),
+                                                        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+                                                        ('TOPPADDING', (0,0), (-1,0), 10),  # Image padding
+                                                        ('BOTTOMPADDING', (0,0), (-1,0), 5),  # Image padding
+                                                        ('TOPPADDING', (0,1), (-1,1), 5),   # Caption padding
+                                                        ('BOTTOMPADDING', (0,1), (-1,1), 15), # Caption padding
+                                                    ]))
+                                                    
+                                                    elements.append(img_table)
+                                                    elements.append(Spacer(1, 10))
+                                                    
+                                                except Exception as e:
+                                                    print(f"Error processing image {img_path}: {e}")
+                                                    elements.append(Paragraph(f"Error loading image: {img_path}", normal_style))
+                                                    elements.append(Spacer(1, 10))
                                             else:
-                                                # Two images - balanced layout with margins
-                                                img_table = Table([grid_imgs], colWidths=[250, 250])
-                                                img_table.setStyle(TableStyle([
-                                                    ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-                                                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                                                    ('LEFTPADDING', (0,0), (-1,-1), 15),
-                                                    ('RIGHTPADDING', (0,0), (-1,-1), 15),
-                                                    ('TOPPADDING', (0,0), (-1,-1), 10),
-                                                    ('BOTTOMPADDING', (0,0), (-1,-1), 10),
-                                                ]))
-                                            
-                                            elements.append(img_table)
-                                            elements.append(Spacer(1, 15))
+                                                elements.append(Paragraph(f"Image not found: {img_path}", normal_style))
+                                                elements.append(Spacer(1, 10))
                                     else:
-                                        elements.append(Paragraph("No PDF images available for this test case.", caption_style))
+                                        elements.append(Paragraph("No screenshots available for this test case.", caption_style))
                                 else:
                                     # No matching screenshot folder found - show "No screenshot found"
                                     elements.append(Paragraph("Screenshots: No screenshot found", caption_style))
@@ -1245,8 +1404,7 @@ def export_pdf():
         
         # Generate filename
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        status_suffix = "PASS" if overall_status == "PASSED" else "FAIL"
-        filename = f"TestReport_{timestamp}_{status_suffix}.pdf"
+        filename = f"DRDB_TestReport_{timestamp}.pdf"
         
         return send_file(buffer, as_attachment=True, download_name=filename, mimetype='application/pdf')
         
@@ -1256,11 +1414,1234 @@ def export_pdf():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, feature_data, test_case_row):
+    """Core PDF generation logic - reusable for both individual and ZIP downloads.
+    Robust to both pandas.Series and dict rows.
+    """
+    try:
+        # Normalize access helpers (support pandas Series or dict)
+        try:
+            available_fields = list(getattr(test_case_row, 'index', getattr(test_case_row, 'keys', lambda: [])()))
+        except Exception:
+            available_fields = []
+
+        def row_get(key, default=None):
+            try:
+                if key is None:
+                    return default
+                # Use mapping-style get when available
+                if hasattr(test_case_row, 'get'):
+                    return test_case_row.get(key, default)
+                # Fallback for Series without .get
+                return test_case_row[key] if key in available_fields else default
+            except Exception:
+                return default
+
+        def pick_col(candidates):
+            for c in candidates:
+                if c in available_fields:
+                    return c
+            return None
+
+        # Get test case information
+        desc_columns = ['Test Case Description', 'TestCaseDescription', 'Description', 'Test Description', 'Name']
+        desc_col = pick_col(desc_columns)
+        status_columns = ['TestResult', 'Status', 'Result']
+        status_col = pick_col(status_columns)
+        error_columns = ['Fail_Description', 'Fail Description', 'TestResult Description', 'Result Description', 'Error', 'Message', 'Failure Reason']
+        error_col = pick_col(error_columns)
+        expected_result_columns = ['ExpectedResult', 'Expected Result', 'Expected', 'Expected Outcome']
+        expected_result_col = pick_col(expected_result_columns)
+
+        try:
+            print(f"[DEBUG][Row Mapping] test_case_id={test_case_id} available_fields={list(available_fields)}")
+            print(f"[DEBUG][Row Mapping] chosen -> desc_col={desc_col}, status_col={status_col}, error_col={error_col}, expected_result_col={expected_result_col}")
+        except Exception:
+            pass
+        
+        # Get screenshots for this test case and find folder name
+        screenshots = []
+        folder_name_for_title = None
+        
+        if feature_data.get('test_evidence'):
+            # First priority: Look for exact match
+            if test_case_id in feature_data['test_evidence']:
+                screenshots = feature_data['test_evidence'][test_case_id]
+                folder_name_for_title = test_case_id
+            else:
+                # Second priority: Look for fuzzy match
+                for folder_name, folder_images in feature_data['test_evidence'].items():
+                    if folder_name.startswith(test_case_id + '_') or folder_name == test_case_id:
+                        screenshots = folder_images
+                        folder_name_for_title = folder_name
+                        break
+        
+        # Extract test case information with priority
+        # Priority 1: Use folder name from screenshot folder
+        # Priority 2: Use description from Excel
+        # Priority 3: Use test_case_id as fallback
+        if folder_name_for_title and folder_name_for_title != test_case_id:
+            # Extract description from folder name (remove test_case_id prefix if exists)
+            if folder_name_for_title.startswith(test_case_id + '_'):
+                test_case_name = folder_name_for_title[len(test_case_id + '_'):]
+            else:
+                test_case_name = folder_name_for_title
+        else:
+            # Fallback to Excel description
+            test_case_name = str(row_get(desc_col, test_case_id))
+
+        status_raw = row_get(status_col, 'UNKNOWN')
+        test_case_status = str(status_raw).strip().upper() if status_raw is not None else 'UNKNOWN'
+        error_val = row_get(error_col, '')
+        error_message = str(error_val) if error_val is not None else ''
+        expected_val = row_get(expected_result_col, '')
+        expected_result = str(expected_val) if expected_val is not None else ''
+
+        try:
+            print(f"[DEBUG][Row Values] name='{test_case_name}' status='{test_case_status}' has_error={bool(error_message)} has_expected={bool(expected_result)}")
+        except Exception:
+            pass
+
+        # Generate PDF
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=30, bottomMargin=30)
+        styles = getSampleStyleSheet()
+        elements = []
+
+        # Custom styles
+        title_style = styles['Title'].clone('TestCaseTitleStyle')
+        title_style.fontSize = 16
+        title_style.spaceAfter = 20
+        title_style.textColor = colors.HexColor("#8B4513")
+        title_style.fontName = 'Helvetica-Bold'
+        title_style.alignment = 1
+        
+        header_style = styles['Heading1'].clone('TestCaseHeaderStyle')
+        header_style.fontSize = 14
+        header_style.spaceAfter = 15
+        header_style.textColor = colors.HexColor("#8B4513")
+        header_style.fontName = 'Helvetica-Bold'
+        
+        normal_style = styles['Normal'].clone('TestCaseNormalStyle')
+        normal_style.fontSize = 10
+        normal_style.textColor = colors.HexColor("#2F4F4F")
+        normal_style.fontName = 'Helvetica'
+        normal_style.leading = 12
+
+        caption_style = styles['Normal'].clone('TestCaseCaptionStyle')
+        caption_style.fontSize = 9
+        caption_style.textColor = colors.HexColor("#666666")
+        caption_style.fontName = 'Helvetica'
+        caption_style.leading = 11
+        caption_style.alignment = 1
+
+        # Header - Use folder name as priority  
+        safe_title = escape_html_for_pdf(f"{test_case_id}: {test_case_name}")
+        elements.append(Paragraph(safe_title, title_style))
+        
+        # Status
+        if test_case_status == "PASS":
+            status_color = colors.HexColor("#28a745")
+            status_bg_color = colors.HexColor("#d4edda")
+            status_icon = "✓"
+        elif test_case_status == "FAIL":
+            status_color = colors.HexColor("#dc3545")
+            status_bg_color = colors.HexColor("#f8d7da")
+            status_icon = "✗"
+        else:
+            status_color = colors.HexColor("#6c757d")
+            status_bg_color = colors.HexColor("#e2e3e5")
+            status_icon = "?"
+            
+        status_style = styles['Normal'].clone('StatusStyle')
+        status_style.fontSize = 16
+        status_style.fontName = 'Helvetica-Bold'
+        status_style.textColor = status_color
+        status_style.alignment = 1
+        status_style.borderWidth = 2
+        status_style.borderColor = status_color
+        status_style.borderPadding = 15
+        status_style.backColor = status_bg_color
+        
+        # Make status badge take the full content width so we can match the metadata table width
+        content_width = A4[0] - doc.leftMargin - doc.rightMargin
+        status_table = Table(
+            [[Paragraph(f"{status_icon} Test Result: {test_case_status}", status_style)]],
+            colWidths=[content_width]
+        )
+        status_table.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE')
+        ]))
+        elements.append(status_table)
+        elements.append(Spacer(1, 20))
+        
+        # Metadata
+        metadata_data = [
+            ["Execution Date & Time:", format_timestamp_professional(run_timestamp)],
+            ["Feature Category:", feature_name],
+            ["Test Case ID:", test_case_id]
+        ]
+        
+        if test_case_name and test_case_name != test_case_id:
+            metadata_data.append(["Test Case Description:", test_case_name])
+        
+        if expected_result and expected_result.strip() and expected_result.lower() not in ['nan', 'none', '']:
+            metadata_data.append(["Expected Result:", expected_result])
+
+        # Move Fail_Description outside the table to prevent a single very-tall row
+        fail_desc_text = None
+        if error_message and error_message.strip() and error_message.lower() not in ['nan', 'none', '']:
+            fail_desc_text = error_message
+        
+        # Build metadata rows with Paragraphs and CJK word wrapping to avoid overflow with long text
+        label_style = styles['Normal'].clone('MetaLabelStyle')
+        label_style.fontSize = 9
+        label_style.textColor = colors.HexColor("#8B4513")
+        label_style.fontName = 'Helvetica-Bold'
+        label_style.leading = 11
+        label_style.wordWrap = 'CJK'
+
+        value_style = styles['Normal'].clone('MetaValueStyle')
+        value_style.fontSize = 9
+        value_style.textColor = colors.HexColor("#2F4F4F")
+        value_style.fontName = 'Helvetica'
+        value_style.leading = 11
+        value_style.wordWrap = 'CJK'
+
+        metadata_rows = []
+        for label, value in metadata_data:
+            try:
+                # Safely process both label and value text
+                safe_label = escape_html_for_pdf(str(label))
+                safe_value = escape_html_for_pdf(str(value))
+                metadata_rows.append([
+                    Paragraph(safe_label, label_style),
+                    Paragraph(safe_value, value_style)
+                ])
+            except Exception as e:
+                print(f"[ERROR] Failed to add metadata row '{label}': {e}")
+                # Fallback to plain text
+                metadata_rows.append([
+                    Paragraph(str(label), label_style),
+                    Paragraph(str(value).replace('<', '&lt;').replace('>', '&gt;').replace('&', '&amp;'), value_style)
+                ])
+
+        # Make table span the full content width (same as status badge)
+        label_col_width = 160
+        if content_width - label_col_width < 160:
+            label_col_width = max(120, content_width * 0.33)
+        value_col_width = content_width - label_col_width
+
+        metadata_table = Table(metadata_rows, colWidths=[label_col_width, value_col_width])
+        metadata_table.setStyle(TableStyle([
+            ('FONTNAME', (0,0), (0,-1), 'Helvetica-Bold'),
+            ('FONTNAME', (1,0), (1,-1), 'Helvetica'),
+            ('FONTSIZE', (0,0), (-1,-1), 9),
+            ('ALIGN', (0,0), (0,-1), 'RIGHT'),
+            ('ALIGN', (1,0), (1,-1), 'LEFT'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('TEXTCOLOR', (0,0), (0,-1), colors.HexColor("#8B4513")),
+            ('TEXTCOLOR', (1,0), (1,-1), colors.HexColor("#2F4F4F")),
+            ('LINEBELOW', (0,0), (-1,-1), 1, colors.HexColor("#D4AF37")),
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#FFFEF7")),
+            ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#D4AF37")),
+            ('TOPPADDING', (0,0), (-1,-1), 6),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ('LEFTPADDING', (0,0), (-1,-1), 8),
+            ('RIGHTPADDING', (0,0), (-1,-1), 8),
+        ]))
+        elements.append(metadata_table)
+        elements.append(Spacer(1, 25))
+
+        # Render long Fail_Description as a standalone paragraph block (can break across pages)
+        if fail_desc_text is not None:
+            try:
+                error_style = styles['Normal'].clone('ErrorBlockStyle')
+                error_style.fontSize = 10
+                error_style.textColor = colors.HexColor("#dc3545")
+                error_style.fontName = 'Helvetica-Bold'
+                error_style.leftIndent = 6
+                error_style.rightIndent = 6
+                error_style.spaceBefore = 6
+                error_style.spaceAfter = 12
+                error_style.backColor = colors.HexColor("#FFEBEE")
+                error_style.borderColor = colors.HexColor("#dc3545")
+                error_style.borderWidth = 1
+                error_style.borderPadding = 8
+                error_style.borderRadius = 4
+                error_style.leading = 12
+                error_style.wordWrap = 'CJK'
+
+                # Safely escape the text to prevent XML/HTML parsing errors
+                print(f"[DEBUG] Processing Fail_Description for PDF (length: {len(fail_desc_text)} chars)")
+                safe_fail_text = escape_html_for_pdf(fail_desc_text)
+                print(f"[DEBUG] Escaped text length: {len(safe_fail_text)}")
+                
+                elements.append(Paragraph(f"<b>Fail_Description:</b><br/>{safe_fail_text}", error_style))
+                elements.append(Spacer(1, 10))
+                print(f"[DEBUG] Successfully added Fail_Description to PDF")
+            except Exception as e:
+                print(f"[ERROR] Failed to add Fail_Description to PDF: {e}")
+                import traceback
+                traceback.print_exc()
+                
+                # Fallback: Add as plain text without formatting
+                try:
+                    print(f"[DEBUG] Trying fallback method for Fail_Description")
+                    fallback_style = styles['Normal'].clone('FallbackErrorStyle')
+                    fallback_style.fontSize = 9
+                    fallback_style.textColor = colors.HexColor("#dc3545")
+                    fallback_style.fontName = 'Helvetica'
+                    fallback_style.leading = 11
+                    fallback_style.wordWrap = 'CJK'
+                    
+                    # Remove any potentially problematic characters and truncate if extremely long
+                    clean_text = re.sub(r'[<>&"\']', ' ', str(fail_desc_text))
+                    if len(clean_text) > 5000:
+                        clean_text = clean_text[:5000] + "... [ตัดทอนเนื่องจากข้อความยาวมาก]"
+                    
+                    elements.append(Paragraph(f"Fail_Description: {clean_text}", fallback_style))
+                    elements.append(Spacer(1, 10))
+                    print(f"[DEBUG] Fallback method succeeded")
+                except Exception as e2:
+                    print(f"[ERROR] Fallback Fail_Description also failed: {e2}")
+                    import traceback
+                    traceback.print_exc()
+                    
+                    # Last resort: Add a simple note
+                    try:
+                        simple_msg = f"Fail_Description: [ไม่สามารถแสดงข้อความได้เนื่องจากข้อความมีความยาว {len(str(fail_desc_text))} ตัวอักษร]"
+                        elements.append(Paragraph(simple_msg, styles['Normal']))
+                        elements.append(Spacer(1, 10))
+                        print(f"[DEBUG] Added simplified error message")
+                    except Exception as e3:
+                        print(f"[ERROR] Even simple error message failed: {e3}")
+                        # Skip this section entirely if all methods fail
+
+        # Screenshots (include all screenshots, no limit)
+        if screenshots:
+            elements.append(PageBreak())  # Start screenshots on new page
+            elements.append(Paragraph("Test Evidence Screenshots", header_style))
+            elements.append(Spacer(1, 15))
+            
+            # Show all screenshots, not just PDF ones, but limit to prevent huge files
+            all_screenshots = screenshots
+            
+            # Limit screenshots to prevent huge PDF files (max 20 screenshots)
+            if len(all_screenshots) > 20:
+                print(f"[WARNING] Too many screenshots ({len(all_screenshots)}), limiting to 20")
+                all_screenshots = all_screenshots[:20]
+                
+            if all_screenshots:
+                screenshot_count_msg = f"Screenshots: {len(all_screenshots)}"
+                if len(screenshots) > 20:
+                    screenshot_count_msg += f" (limited from {len(screenshots)} total)"
+                elements.append(Paragraph(screenshot_count_msg, caption_style))
+                elements.append(Spacer(1, 15))
+                
+                # Sort screenshots by file modification time for execution sequence
+                sorted_screenshots = sorted(all_screenshots, key=lambda img_path: (PROJECT_ROOT / img_path).stat().st_mtime if (PROJECT_ROOT / img_path).exists() else 0)
+                
+                for idx, img_path in enumerate(sorted_screenshots, 1):
+                    img_abs = PROJECT_ROOT / img_path
+                    # Get image filename (defined outside try block for error handling)
+                    img_filename = img_path.split('/')[-1] if img_path else f"image_{idx}"
+                    
+                    if img_abs.exists():
+                        try:
+                            # Process image with PIL for high quality
+                            if PIL_AVAILABLE:
+                                with PILImage.open(str(img_abs)) as pil_img:
+                                    # Get original dimensions
+                                    original_width, original_height = pil_img.size
+                                    
+                                    # Calculate maximum dimensions for PDF (reduced for smaller file size)
+                                    max_width_pdf = 400
+                                    max_height_pdf = 300
+                                    
+                                    # Calculate scaling factor to maintain aspect ratio
+                                    width_ratio = max_width_pdf / original_width
+                                    height_ratio = max_height_pdf / original_height
+                                    scale_ratio = min(width_ratio, height_ratio)
+                                    
+                                    # Calculate final dimensions for PDF
+                                    pdf_width = original_width * scale_ratio
+                                    pdf_height = original_height * scale_ratio
+                                    
+                                    # Convert to RGB if necessary
+                                    if pil_img.mode in ('RGBA', 'LA', 'P'):
+                                        rgb_img = PILImage.new('RGB', pil_img.size, (255, 255, 255))
+                                        if pil_img.mode == 'P':
+                                            pil_img = pil_img.convert('RGBA')
+                                        rgb_img.paste(pil_img, mask=pil_img.split()[-1] if pil_img.mode in ('RGBA', 'LA') else None)
+                                        pil_img = rgb_img
+                                    
+                                    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_img:
+                                        pil_img.save(temp_img.name, format='JPEG', quality=75, optimize=True, dpi=(150, 150))
+                                        reportlab_img = ReportLabImage(temp_img.name, width=pdf_width, height=pdf_height)
+                            else:
+                                reportlab_img = ReportLabImage(str(img_abs), width=400, height=300)
+                                pdf_width, pdf_height = 400, 300
+                            
+                            # Create image with caption
+                            img_with_caption = [
+                                [reportlab_img],
+                                [Paragraph(f"<b>{img_filename}</b>", caption_style)]
+                            ]
+                            
+                            img_table = Table(img_with_caption, colWidths=[pdf_width])
+                            img_table.setStyle(TableStyle([
+                                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                                ('LEFTPADDING', (0,0), (-1,-1), 0),
+                                ('RIGHTPADDING', (0,0), (-1,-1), 0),
+                                ('TOPPADDING', (0,0), (-1,0), 10),
+                                ('BOTTOMPADDING', (0,0), (-1,0), 5),
+                                ('TOPPADDING', (0,1), (-1,1), 5),
+                                ('BOTTOMPADDING', (0,1), (-1,1), 15),
+                            ]))
+                            
+                            elements.append(img_table)
+                            elements.append(Spacer(1, 15))
+                            
+                        except Exception as e:
+                            print(f"Error processing screenshot {img_path}: {e}")
+                            # Create error info table
+                            error_info = [
+                                [f"Screenshot #{idx}", f"Status: Error"],
+                                [f"File: {img_filename}", f"Error: {str(e)[:50]}..."]
+                            ]
+                            
+                            error_table = Table(error_info, colWidths=[200, 200])
+                            error_table.setStyle(TableStyle([
+                                ('FONTNAME', (0,0), (-1,-1), 'Helvetica'),
+                                ('FONTSIZE', (0,0), (-1,-1), 8),
+                                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                                ('TEXTCOLOR', (0,0), (-1,-1), colors.HexColor("#B71C1C")),
+                                ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#FFEBEE")),
+                                ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#B71C1C")),
+                                ('TOPPADDING', (0,0), (-1,-1), 4),
+                                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                                ('LEFTPADDING', (0,0), (-1,-1), 6),
+                                ('RIGHTPADDING', (0,0), (-1,-1), 6),
+                            ]))
+                            
+                            elements.append(error_table)
+                            elements.append(Spacer(1, 10))
+                    else:
+                        # Create missing file info table
+                        missing_info = [
+                            [f"Screenshot #{idx}", f"Status: Missing"],
+                            [f"File: {img_filename}", f"Path: {img_path}"]
+                        ]
+                        
+                        missing_table = Table(missing_info, colWidths=[200, 200])
+                        missing_table.setStyle(TableStyle([
+                            ('FONTNAME', (0,0), (-1,-1), 'Helvetica'),
+                            ('FONTSIZE', (0,0), (-1,-1), 8),
+                            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                            ('TEXTCOLOR', (0,0), (-1,-1), colors.HexColor("#FF9800")),
+                            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#FFF3E0")),
+                            ('GRID', (0,0), (-1,-1), 1, colors.HexColor("#FF9800")),
+                            ('TOPPADDING', (0,0), (-1,-1), 4),
+                            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                            ('LEFTPADDING', (0,0), (-1,-1), 6),
+                            ('RIGHTPADDING', (0,0), (-1,-1), 6),
+                        ]))
+                        
+                        elements.append(missing_table)
+                        elements.append(Spacer(1, 10))
+            else:
+                elements.append(Paragraph("No screenshots available for this test case.", normal_style))
+        else:
+            elements.append(PageBreak())
+            elements.append(Paragraph("Test Evidence Screenshots", header_style))
+            elements.append(Spacer(1, 15))
+            elements.append(Paragraph("No screenshots available for this test case.", normal_style))
+
+        # Footer
+        footer_style = styles['Normal'].clone('FooterStyle')
+        footer_style.fontSize = 8
+        footer_style.textColor = colors.HexColor("#666666")
+        footer_style.fontName = 'Helvetica'
+        footer_style.leading = 10
+        footer_style.alignment = 1
+        
+        elements.append(Spacer(1, 30))
+        elements.append(Paragraph("_______________________________________________", footer_style))
+        elements.append(Spacer(1, 10))
+        elements.append(Paragraph("Generated by: Test Automation Dashboard v1.0", footer_style))
+        elements.append(Paragraph(f"Report Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", footer_style))
+        elements.append(Paragraph("Confidential - For Internal Use Only", footer_style))
+
+        # Build PDF with enhanced error handling
+        try:
+            doc.build(elements)
+            buffer.seek(0)
+            return buffer
+        except Exception as build_error:
+            print(f"[ERROR] PDF build failed for {test_case_id}: {build_error}")
+            # Create a simpler PDF with basic information if the full build fails
+            try:
+                buffer = io.BytesIO()
+                doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=30, bottomMargin=30)
+                simple_elements = []
+                
+                # Simple title
+                simple_elements.append(Paragraph(f"Test Case: {test_case_id}", styles['Title']))
+                simple_elements.append(Spacer(1, 20))
+                
+                # Simple status
+                simple_elements.append(Paragraph(f"Status: {test_case_status}", styles['Normal']))
+                simple_elements.append(Spacer(1, 10))
+                
+                # Simple description (without special formatting)
+                if test_case_name and test_case_name != test_case_id:
+                    clean_name = re.sub(r'[<>&"\']', '', str(test_case_name))
+                    simple_elements.append(Paragraph(f"Description: {clean_name}", styles['Normal']))
+                    simple_elements.append(Spacer(1, 10))
+                
+                # Simple error message (if any) - truncated and cleaned
+                if fail_desc_text:
+                    clean_error = re.sub(r'[<>&"\']', '', str(fail_desc_text)[:1000])  # Truncate to 1000 chars
+                    simple_elements.append(Paragraph(f"Error Description: {clean_error}...", styles['Normal']))
+                    simple_elements.append(Spacer(1, 10))
+                
+                simple_elements.append(Spacer(1, 20))
+                simple_elements.append(Paragraph("Note: This is a simplified PDF due to formatting issues in the original content.", styles['Normal']))
+                simple_elements.append(Paragraph(f"Original error: {str(build_error)[:200]}", styles['Normal']))
+                
+                doc.build(simple_elements)
+                buffer.seek(0)
+                return buffer
+            except Exception as simple_error:
+                print(f"[ERROR] Even simple PDF build failed for {test_case_id}: {simple_error}")
+                raise build_error
+        
+    except Exception as e:
+        print(f"Error generating test case PDF for {test_case_id}: {e}")
+        return None
+
+def generate_optimized_test_case_pdf(test_case_id, feature_name, run_timestamp, feature_data, test_case_row):
+    """Generate an optimized PDF with reduced content for large files."""
+    try:
+        print(f"[DEBUG] Generating optimized PDF for {test_case_id}")
+        
+        # Use similar structure but with content limitations
+        try:
+            available_fields = list(getattr(test_case_row, 'index', getattr(test_case_row, 'keys', lambda: [])()))
+        except Exception:
+            available_fields = []
+
+        def row_get(key, default=None):
+            try:
+                if key is None:
+                    return default
+                if hasattr(test_case_row, 'get'):
+                    return test_case_row.get(key, default)
+                return test_case_row[key] if key in available_fields else default
+            except Exception:
+                return default
+
+        def pick_col(candidates):
+            for c in candidates:
+                if c in available_fields:
+                    return c
+            return None
+
+        # Get basic info
+        desc_columns = ['Test Case Description', 'TestCaseDescription', 'Description', 'Test Description', 'Name']
+        desc_col = pick_col(desc_columns)
+        status_columns = ['TestResult', 'Status', 'Result']
+        status_col = pick_col(status_columns)
+        error_columns = ['Fail_Description', 'Fail Description', 'TestResult Description', 'Result Description', 'Error', 'Message', 'Failure Reason']
+        error_col = pick_col(error_columns)
+
+        test_case_name = str(row_get(desc_col, test_case_id))
+        status_raw = row_get(status_col, 'UNKNOWN')
+        test_case_status = str(status_raw).strip().upper() if status_raw is not None else 'UNKNOWN'
+        error_val = row_get(error_col, '')
+        error_message = str(error_val) if error_val is not None else ''
+
+        # Create simplified PDF
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=30, bottomMargin=30)
+        styles = getSampleStyleSheet()
+        elements = []
+
+        # Simple title
+        title_style = styles['Title'].clone('OptimizedTitleStyle')
+        title_style.fontSize = 16
+        title_style.spaceAfter = 20
+        title_style.textColor = colors.HexColor("#8B4513")
+        title_style.fontName = 'Helvetica-Bold'
+        title_style.alignment = 1
+        
+        elements.append(Paragraph(f"Test Case: {escape_html_for_pdf(test_case_id)}", title_style))
+        elements.append(Spacer(1, 20))
+
+        # Status
+        status_style = styles['Normal'].clone('OptimizedStatusStyle')
+        status_style.fontSize = 14
+        status_style.fontName = 'Helvetica-Bold'
+        status_style.alignment = 1
+        
+        if test_case_status == "PASS":
+            status_style.textColor = colors.HexColor("#28a745")
+        elif test_case_status == "FAIL":
+            status_style.textColor = colors.HexColor("#dc3545")
+        else:
+            status_style.textColor = colors.HexColor("#6c757d")
+            
+        elements.append(Paragraph(f"Status: {test_case_status}", status_style))
+        elements.append(Spacer(1, 20))
+
+        # Basic metadata
+        normal_style = styles['Normal'].clone('OptimizedNormalStyle')
+        normal_style.fontSize = 10
+        normal_style.leading = 12
+        
+        elements.append(Paragraph(f"<b>Test Case ID:</b> {escape_html_for_pdf(test_case_id)}", normal_style))
+        elements.append(Spacer(1, 10))
+        
+        if test_case_name and test_case_name != test_case_id:
+            elements.append(Paragraph(f"<b>Description:</b> {escape_html_for_pdf(test_case_name[:500])}...", normal_style))
+            elements.append(Spacer(1, 10))
+        
+        elements.append(Paragraph(f"<b>Feature:</b> {escape_html_for_pdf(feature_name)}", normal_style))
+        elements.append(Spacer(1, 10))
+        
+        elements.append(Paragraph(f"<b>Execution Time:</b> {format_timestamp_professional(run_timestamp)}", normal_style))
+        elements.append(Spacer(1, 20))
+
+        # Truncated error message if any
+        if error_message and error_message.strip():
+            error_style = styles['Normal'].clone('OptimizedErrorStyle')
+            error_style.fontSize = 10
+            error_style.textColor = colors.HexColor("#dc3545")
+            error_style.fontName = 'Helvetica'
+            error_style.leading = 12
+            
+            # Limit error message to 2000 characters
+            truncated_error = error_message[:2000]
+            if len(error_message) > 2000:
+                truncated_error += "... [ข้อความถูกตัดทอนเนื่องจากความยาว]"
+            
+            safe_error = escape_html_for_pdf(truncated_error)
+            elements.append(Paragraph(f"<b>Error Description:</b><br/>{safe_error}", error_style))
+            elements.append(Spacer(1, 20))
+
+        # Limited screenshots (max 5)
+        screenshots = []
+        if feature_data.get('test_evidence'):
+            if test_case_id in feature_data['test_evidence']:
+                screenshots = feature_data['test_evidence'][test_case_id][:5]  # Limit to 5 screenshots
+
+        if screenshots:
+            elements.append(Paragraph("<b>Screenshots (Limited to 5):</b>", normal_style))
+            elements.append(Spacer(1, 10))
+            
+            for idx, img_path in enumerate(screenshots, 1):
+                img_abs = PROJECT_ROOT / img_path
+                if img_abs.exists():
+                    try:
+                        # Smaller images for optimization
+                        if PIL_AVAILABLE:
+                            with PILImage.open(str(img_abs)) as pil_img:
+                                # Smaller size for optimized PDF
+                                max_width, max_height = 300, 200
+                                original_width, original_height = pil_img.size
+                                
+                                width_ratio = max_width / original_width
+                                height_ratio = max_height / original_height
+                                scale_ratio = min(width_ratio, height_ratio)
+                                
+                                pdf_width = original_width * scale_ratio
+                                pdf_height = original_height * scale_ratio
+                                
+                                if pil_img.mode in ('RGBA', 'LA', 'P'):
+                                    rgb_img = PILImage.new('RGB', pil_img.size, (255, 255, 255))
+                                    if pil_img.mode == 'P':
+                                        pil_img = pil_img.convert('RGBA')
+                                    rgb_img.paste(pil_img, mask=pil_img.split()[-1] if pil_img.mode in ('RGBA', 'LA') else None)
+                                    pil_img = rgb_img
+                                
+                                with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_img:
+                                    pil_img.save(temp_img.name, 'JPEG', quality=70, optimize=True)  # Lower quality
+                                    reportlab_img = ReportLabImage(temp_img.name, width=pdf_width, height=pdf_height)
+                        else:
+                            reportlab_img = ReportLabImage(str(img_abs), width=300, height=200)
+                        
+                        img_filename = img_path.split('/')[-1]
+                        img_table = Table([[reportlab_img], [Paragraph(f"<b>{img_filename}</b>", normal_style)]], colWidths=[300])
+                        img_table.setStyle(TableStyle([
+                            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                        ]))
+                        
+                        elements.append(img_table)
+                        elements.append(Spacer(1, 15))
+                        
+                        # Clean up temp file
+                        if PIL_AVAILABLE:
+                            try:
+                                os.unlink(temp_img.name)
+                            except:
+                                pass
+                                
+                    except Exception as e:
+                        print(f"[ERROR] Failed to add screenshot {img_path}: {e}")
+                        continue
+        else:
+            elements.append(Paragraph("No screenshots available.", normal_style))
+
+        # Footer
+        elements.append(Spacer(1, 30))
+        footer_style = styles['Normal'].clone('OptimizedFooterStyle')
+        footer_style.fontSize = 8
+        footer_style.textColor = colors.HexColor("#666666")
+        footer_style.alignment = 1
+        
+        elements.append(Paragraph("Generated by: Test Automation Dashboard (Optimized Version)", footer_style))
+        elements.append(Paragraph(f"Report Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", footer_style))
+        elements.append(Paragraph("Note: This is an optimized version with limited content due to size constraints.", footer_style))
+
+        # Build optimized PDF
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer
+        
+    except Exception as e:
+        print(f"[ERROR] Optimized PDF generation failed for {test_case_id}: {e}")
+        return None
+
+@app.route('/api/export_testcase_pdf', methods=['POST'])
+def export_testcase_pdf():
+    """Export individual test case to PDF with detailed screenshots and information."""
+    if not REPORTLAB_AVAILABLE:
+        print("[ERROR] ReportLab not available for PDF export")
+        return jsonify({'error': 'PDF download not available. ReportLab not installed.'}), 500
+        
+    try:
+        print("[DEBUG] Starting PDF export request...")
+        data = request.get_json()
+        if not data:
+            print("[ERROR] No JSON data provided in request")
+            return jsonify({'error': 'No data provided'}), 400
+            
+        test_case_id = data.get('test_case_id')
+        feature_name = data.get('feature_name')
+        run_timestamp = data.get('run_timestamp')
+        
+        print(f"[DEBUG] PDF export request params: test_case_id='{test_case_id}', feature_name='{feature_name}', run_timestamp='{run_timestamp}'")
+        
+        if not all([test_case_id, feature_name, run_timestamp]):
+            print(f"[ERROR] Missing required parameters: test_case_id={test_case_id}, feature_name={feature_name}, run_timestamp={run_timestamp}")
+            return jsonify({'error': 'Missing required parameters: test_case_id, feature_name, run_timestamp'}), 400
+
+        # Find the specific test case data
+        print(f"[DEBUG] Searching for test case data in {RESULTS_DIR}")
+        all_excel_files = find_excel_files(RESULTS_DIR)
+        print(f"[DEBUG] Found {len(all_excel_files)} Excel files to search")
+        target_feature_data = None
+        
+        for excel_file in all_excel_files:
+            print(f"[DEBUG] Parsing Excel file: {excel_file}")
+            feature_data = parse_excel_data(excel_file)
+            if feature_data:
+                print(f"[DEBUG] Excel file data: feature_name='{feature_data.get('feature_name')}', run_timestamp='{feature_data.get('run_timestamp')}'")
+                if (feature_data.get("feature_name") == feature_name and 
+                    feature_data.get("run_timestamp") == run_timestamp):
+                    target_feature_data = feature_data
+                    print(f"[DEBUG] Found matching feature data in {excel_file}")
+                    break
+            else:
+                print(f"[DEBUG] Failed to parse Excel file: {excel_file}")
+        
+        if not target_feature_data:
+            print(f"[ERROR] Test case not found: {test_case_id} in {feature_name} for timestamp {run_timestamp}")
+            return jsonify({'error': f'Test case not found: {test_case_id} in {feature_name}'}), 404
+
+        # Get Excel file for test case details
+        excel_path = PROJECT_ROOT / target_feature_data['excel_path']
+        print(f"[DEBUG] Reading Excel file: {excel_path}")
+        if not excel_path.exists():
+            print(f"[ERROR] Excel file not found: {excel_path}")
+            return jsonify({'error': f'Excel file not found: {excel_path}'}), 404
+            
+        df = pd.read_excel(excel_path)
+        print(f"[DEBUG] Excel file loaded successfully. Shape: {df.shape}")
+        print(f"[DEBUG] Available columns: {list(df.columns)}")
+        
+        # Find relevant columns
+        id_columns = ['Test Case ID', 'TestCaseID', 'Test Case', 'ID', 'TestCase', 'TestCaseNo', 'Name']
+        id_col = find_first_column(df.columns, id_columns)
+        
+        desc_columns = ['Test Case Description', 'TestCaseDescription', 'Description', 'Test Description', 'Name']
+        desc_col = find_first_column(df.columns, desc_columns)
+        
+        status_columns = ['TestResult', 'Status', 'Result']
+        status_col = find_first_column(df.columns, status_columns)
+        
+        error_columns = ['Fail_Description', 'Fail Description', 'TestResult Description', 'Result Description', 'Error', 'Message', 'Failure Reason']
+        error_col = find_first_column(df.columns, error_columns)
+        
+        expected_result_columns = ['ExpectedResult', 'Expected Result', 'Expected', 'Expected Outcome']
+        expected_result_col = find_first_column(df.columns, expected_result_columns)
+        
+        print(f"[DEBUG] Column mapping: id_col='{id_col}', desc_col='{desc_col}', status_col='{status_col}', error_col='{error_col}', expected_result_col='{expected_result_col}'")
+        
+        # Find the specific test case row
+        test_case_row = None
+        print(f"[DEBUG] Searching for test case ID: '{test_case_id}'")
+        for _, row in df.iterrows():
+            row_id = str(row.get(id_col, '')).strip()
+            if row_id == test_case_id:
+                test_case_row = row
+                print(f"[DEBUG] Found test case row for ID: '{test_case_id}'")
+                
+                # Debug the content length
+                if error_col and error_col in row:
+                    error_content = str(row[error_col]) if pd.notna(row[error_col]) else ''
+                    print(f"[DEBUG] Error content length: {len(error_content)} characters")
+                    if len(error_content) > 1000:
+                        print(f"[DEBUG] Long error content detected. First 200 chars: {error_content[:200]}...")
+                        print(f"[DEBUG] Contains Thai characters: {any(ord(c) > 127 for c in error_content)}")
+                break
+        
+        if test_case_row is None:
+            # Try to find by partial match or use default values
+            print(f"Test case {test_case_id} not found in Excel, using default values")
+            test_case_row = {
+                id_col: test_case_id,
+                desc_col: test_case_id,
+                status_col: 'UNKNOWN',
+                error_col: '',
+                expected_result_col: ''
+            }
+
+        # Use core PDF generation function
+        print(f"[DEBUG] Calling PDF generation for test case: {test_case_id}")
+        try:
+            pdf_buffer = generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, target_feature_data, test_case_row)
+            print(f"[DEBUG] PDF generation completed. Buffer exists: {pdf_buffer is not None}")
+        except Exception as pdf_error:
+            print(f"[ERROR] PDF generation failed with error: {pdf_error}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': f'PDF generation failed: {str(pdf_error)}'}), 500
+        
+        if not pdf_buffer:
+            print(f"[ERROR] PDF generation returned None for test case: {test_case_id}")
+            return jsonify({'error': 'Failed to generate PDF - buffer is None'}), 500
+        
+        # Generate filename (sanitize to avoid header/path issues)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        safe_tc = sanitize_filename(test_case_id)
+        safe_feature = sanitize_filename(feature_name)
+        filename = f"TestCase_{safe_tc}_{safe_feature}_{timestamp}.pdf"
+        print(f"[DEBUG] Generated filename: {filename}")
+        
+        try:
+            pdf_size = len(pdf_buffer.getvalue())
+            print(f"[DEBUG] Sending PDF file. Buffer size: {pdf_size} bytes ({pdf_size / (1024*1024):.2f} MB)")
+            
+            # Check if PDF is too large (> 100 MB)
+            if pdf_size > 100 * 1024 * 1024:  # 100 MB limit
+                print(f"[WARNING] PDF is too large ({pdf_size / (1024*1024):.2f} MB), creating optimized version")
+                
+                # Create a simpler PDF with reduced content
+                try:
+                    optimized_buffer = generate_optimized_test_case_pdf(test_case_id, feature_name, run_timestamp, target_feature_data, test_case_row)
+                    if optimized_buffer:
+                        opt_size = len(optimized_buffer.getvalue())
+                        print(f"[DEBUG] Optimized PDF size: {opt_size} bytes ({opt_size / (1024*1024):.2f} MB)")
+                        return send_file(optimized_buffer, as_attachment=True, download_name=filename, mimetype='application/pdf')
+                except Exception as opt_error:
+                    print(f"[ERROR] Failed to create optimized PDF: {opt_error}")
+                
+                # If optimization fails, return error
+                return jsonify({'error': f'PDF is too large ({pdf_size / (1024*1024):.2f} MB). Please contact administrator.'}), 413
+            
+            return send_file(pdf_buffer, as_attachment=True, download_name=filename, mimetype='application/pdf')
+        except Exception as send_error:
+            print(f"[ERROR] Failed to send PDF file: {send_error}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': f'Failed to send PDF: {str(send_error)}'}), 500
+        
+    except Exception as e:
+        print(f"[ERROR] Test Case PDF Export Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Export failed: {str(e)}'}), 500
+
+@app.route('/api/export_feature_pdfs_zip', methods=['POST'])
+def export_feature_pdfs_zip():
+    """Export all test case PDFs for a specific feature as a ZIP file."""
+    if not REPORTLAB_AVAILABLE:
+        return jsonify({'error': 'PDF generation not available. ReportLab not installed.'}), 500
+        
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        feature_name = data.get('feature_name')
+        run_timestamp = data.get('run_timestamp')
+        run_index = data.get('run_index')
+        feature_index = data.get('feature_index')
+        
+        if not all([feature_name, run_timestamp]):
+            return jsonify({'error': 'Missing required parameters'}), 400
+
+        # Find the specific feature data
+        all_excel_files = find_excel_files(RESULTS_DIR)
+        target_feature_data = None
+        
+        for excel_file in all_excel_files:
+            feature_data = parse_excel_data(excel_file)
+            if (feature_data and 
+                feature_data.get("feature_name") == feature_name and 
+                feature_data.get("run_timestamp") == run_timestamp):
+                target_feature_data = feature_data
+                break
+        
+        if not target_feature_data:
+            return jsonify({'error': f'Feature not found: {feature_name}'}), 404
+
+        # Get Excel file for test case details
+        excel_path = PROJECT_ROOT / target_feature_data['excel_path']
+        if not excel_path.exists():
+            return jsonify({'error': f'Excel file not found: {excel_path}'}), 404
+            
+        df = pd.read_excel(excel_path)
+        
+        # Find relevant columns
+        id_columns = ['Test Case ID', 'TestCaseID', 'Test Case', 'ID', 'TestCase', 'TestCaseNo', 'Name']
+        id_col = find_first_column(df.columns, id_columns)
+        status_columns = ['TestResult', 'Status', 'Result']
+        status_col = find_first_column(df.columns, status_columns)
+        
+        if not id_col or not status_col:
+            return jsonify({'error': 'Required columns not found in Excel file'}), 400
+
+        # Filter for executed tests only (Execute == 'Y')
+        execute_column = next((c for c in df.columns if c.lower() == 'execute'), None)
+        if execute_column:
+            df = df[df[execute_column].str.lower() == 'y'].copy()
+
+        # Create temporary ZIP file
+        with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as temp_zip:
+            with zipfile.ZipFile(temp_zip.name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                
+                # Process each test case that has Execute = 'Y'
+                for _, row in df.iterrows():
+                    test_case_id = str(row.get(id_col, '')).strip()
+                    test_case_status = str(row.get(status_col, '')).strip().upper()
+                    
+                    # Skip if test case is empty
+                    if not test_case_id or test_case_id.lower() in ['nan', 'none', '']:
+                        continue
+                    
+                    try:
+                        # Generate PDF for this test case (include all, regardless of status)
+                        pdf_buffer = generate_test_case_pdf_core(
+                            test_case_id, feature_name, run_timestamp, target_feature_data, row
+                        )
+                        
+                        if pdf_buffer:
+                            # Add PDF to ZIP
+                            filename = f"{sanitize_filename(test_case_id)}_{sanitize_filename(feature_name)}.pdf"
+                            zipf.writestr(filename, pdf_buffer.getvalue())
+                            print(f"Added PDF for test case: {test_case_id}")
+                        else:
+                            print(f"Failed to generate PDF for test case: {test_case_id}")
+                            
+                    except Exception as e:
+                        print(f"Error generating PDF for test case {test_case_id}: {e}")
+                        continue
+
+        # Read the ZIP file and return it
+        with open(temp_zip.name, 'rb') as zip_file:
+            zip_data = zip_file.read()
+        
+        # Clean up temporary file
+        os.unlink(temp_zip.name)
+        
+        # Generate filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"{sanitize_filename(feature_name)}_AllTestCases_{timestamp}.zip"
+        
+        return send_file(
+            io.BytesIO(zip_data),
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/zip'
+        )
+        
+    except Exception as e:
+        print(f"ZIP Export Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/export_latest_all_features_zip', methods=['POST'])
+def export_latest_all_features_zip():
+    """Export all test case PDFs for all features in the latest run as a ZIP file."""
+    if not REPORTLAB_AVAILABLE:
+        return jsonify({'error': 'PDF generation not available. ReportLab not installed.'}), 500
+        
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        run_timestamp = data.get('run_timestamp')
+        features = data.get('features', [])
+        
+        if not run_timestamp or not features:
+            return jsonify({'error': 'Missing required parameters'}), 400
+
+        try:
+            # Create ZIP in memory
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                
+                    # Process each feature
+                    for feature in features:
+                        feature_name = feature.get('name')
+                        excel_path = feature.get('excel_path')
+                        
+                        if not feature_name or not excel_path:
+                            continue
+                        
+                        # Find the specific feature data
+                        full_excel_path = PROJECT_ROOT / excel_path
+                        if not full_excel_path.exists():
+                            print(f"Excel file not found: {full_excel_path}")
+                            continue
+                            
+                        try:
+                            df = pd.read_excel(full_excel_path)
+                            
+                            # Find relevant columns
+                            id_columns = ['Test Case ID', 'TestCaseID', 'Test Case', 'ID', 'TestCase', 'TestCaseNo', 'Name']
+                            id_col = find_first_column(df.columns, id_columns)
+                            status_columns = ['TestResult', 'Status', 'Result']
+                            status_col = find_first_column(df.columns, status_columns)
+                            
+                            if not id_col or not status_col:
+                                print(f"Required columns not found in Excel file: {excel_path}")
+                                continue
+
+                            # Filter for executed tests only (Execute == 'Y')
+                            df = filter_executed_rows(df)
+
+                            # Create feature folder in ZIP
+                            feature_folder = f"{feature_name}/"
+                            
+                            # Process each test case that has Execute = 'Y'
+                            for _, row in df.iterrows():
+                                test_case_id = str(row.get(id_col, '')).strip()
+                                test_case_status = str(row.get(status_col, '')).strip().upper()
+                                
+                                # Skip if test case is empty
+                                if not test_case_id or test_case_id.lower() in ['nan', 'none', '']:
+                                    continue
+                                
+                                try:
+                                    # Generate PDF for this test case
+                                    # Build parsed_feature per feature (once outside loop would be better, but safe here)
+                                    try:
+                                        parsed_feature = parse_excel_data(str(full_excel_path))
+                                    except Exception:
+                                        parsed_feature = {'feature_name': feature_name, 'excel_path': excel_path, 'test_evidence': {}}
+                                    pdf_buffer = generate_test_case_pdf_core(
+                                        test_case_id, feature_name, run_timestamp, parsed_feature, row
+                                    )
+                                    
+                                    if pdf_buffer:
+                                        # Add PDF to ZIP with feature folder structure
+                                        filename = f"{feature_folder}{sanitize_filename(test_case_id)}.pdf"
+                                        zipf.writestr(filename, pdf_buffer.getvalue())
+                                        print(f"Added PDF for test case: {test_case_id} in feature: {feature_name}")
+                                    else:
+                                        print(f"Failed to generate PDF for test case: {test_case_id}")
+                                        
+                                except Exception as e:
+                                    print(f"Error generating PDF for test case {test_case_id}: {e}")
+                                    continue
+                                    
+                        except Exception as e:
+                            print(f"Error processing feature {feature_name}: {e}")
+                            continue
+
+            # Get the ZIP data from memory buffer
+            zip_buffer.seek(0)
+            zip_data = zip_buffer.getvalue()
+            
+            # Generate filename
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"LatestRun_AllFeatures_{timestamp}.zip"
+            
+            return send_file(
+                io.BytesIO(zip_data),
+                as_attachment=True,
+                download_name=filename,
+                mimetype='application/zip'
+            )
+                
+        except Exception as e:
+            print(f"Error during PDF generation: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({'error': f'PDF generation failed: {str(e)}'}), 500
+        
+    except Exception as e:
+        print(f"Latest All Features ZIP Export Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+def format_timestamp_professional(timestamp_str):
+    """Format timestamp professionally (helper function)."""
+    try:
+        if timestamp_str and len(timestamp_str) >= 15:
+            if timestamp_str[8] in ['-', '_']:
+                year = timestamp_str[:4]
+                month = timestamp_str[4:6]
+                day = timestamp_str[6:8]
+                hour = timestamp_str[9:11]
+                minute = timestamp_str[11:13]
+                second = timestamp_str[13:15]
+                
+                dt = datetime(int(year), int(month), int(day), int(hour), int(minute), int(second))
+                return dt.strftime("%B %d, %Y at %I:%M %p")
+            else:
+                dt = datetime.fromisoformat(timestamp_str.replace('T', ' '))
+                return dt.strftime("%B %d, %Y at %I:%M %p")
+        else:
+            return timestamp_str
+    except:
+        return timestamp_str
+
 # --- Static File and Results Serving ---
 # This route serves images and other files from the 'results' directory
 @app.route('/results/<path:filepath>')
 def serve_results(filepath):
     return send_from_directory(RESULTS_DIR, filepath)
+
+# --- HTML Thumbnail Generation (cached) ---
+def _ensure_thumbnail_dir() -> Path:
+    thumb_dir = RESULTS_DIR / ".thumbnails"
+    thumb_dir.mkdir(parents=True, exist_ok=True)
+    return thumb_dir
+
+def _html_to_thumbnail(html_abs_path: Path, thumb_abs_path: Path, width: int = 800, height: int = 450):
+    """Generate a PNG thumbnail for an HTML file using Playwright if available.
+    Falls back to a simple placeholder PNG if Playwright is unavailable or errors occur.
+    """
+    try:
+        if PLAYWRIGHT_AVAILABLE:
+            with sync_playwright() as p:
+                browser = p.chromium.launch()
+                page = browser.new_page(viewport={"width": width, "height": height})
+                page.goto(html_abs_path.as_uri(), wait_until="load")
+                page.screenshot(path=str(thumb_abs_path), full_page=False)
+                browser.close()
+                return
+    except Exception as e:
+        print(f"[WARN] Playwright thumbnail failed for {html_abs_path}: {e}")
+
+    # Fallback: generate a simple placeholder PNG via Pillow
+    if PIL_AVAILABLE:
+        try:
+            img = PILImage.new("RGB", (width, height), color=(255, 255, 255))
+            draw = ImageDraw.Draw(img)
+            text = "HTML Preview"
+            sub = html_abs_path.name
+            try:
+                font = ImageFont.load_default()
+            except Exception:
+                font = None
+            # Center text approximately
+            draw.text((20, height // 2 - 20), text, fill=(64, 64, 64), font=font)
+            draw.text((20, height // 2 + 10), sub[:70], fill=(96, 96, 96), font=font)
+            img.save(str(thumb_abs_path), format="PNG")
+            return
+        except Exception as e:
+            print(f"[WARN] Pillow fallback thumbnail failed for {html_abs_path}: {e}")
+
+def _html_preview_placeholder_svg(filename: str, width: int = 800, height: int = 450) -> bytes:
+    """Return a lightweight SVG placeholder for HTML preview thumbnails.
+    This does not require any external dependencies and guarantees a visual thumbnail.
+    """
+    safe_name = (filename or "HTML Preview").replace("<", "&lt;").replace(">", "&gt;")
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f5f7fa"/>
+      <stop offset="100%" stop-color="#e4e7eb"/>
+    </linearGradient>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#g)"/>
+  <rect x="20" y="20" width="{width-40}" height="{height-40}" fill="#ffffff" stroke="#dfe3e8" stroke-width="2" rx="10"/>
+  <g font-family="Arial, Helvetica, sans-serif" text-anchor="middle">
+    <text x="50%" y="48%" fill="#6b7280" font-size="28">HTML Preview</text>
+    <text x="50%" y="58%" fill="#9ca3af" font-size="16">{safe_name}</text>
+  </g>
+</svg>'''
+    return svg.encode("utf-8")
+
+@app.route('/api/html_thumbnail')
+def api_html_thumbnail():
+    """Return (and cache) a thumbnail PNG for an HTML evidence file.
+    Query param 'path' must be a project-root-relative path like 'results/..../file.html'.
+    """
+    rel_path = request.args.get('path')
+    if not rel_path:
+        return abort(400, description="Missing 'path' query parameter")
+
+    # Normalize and validate path
+    try:
+        # Strip leading slashes if provided
+        rel_path_norm = rel_path.lstrip('/\\')
+        abs_path = (PROJECT_ROOT / rel_path_norm).resolve()
+        if RESULTS_DIR not in abs_path.parents and abs_path != RESULTS_DIR:
+            return abort(400, description="Path must be under results directory")
+        if not abs_path.exists() or abs_path.suffix.lower() not in ['.html', '.htm']:
+            return abort(404)
+    except Exception:
+        return abort(400, description="Invalid path")
+
+    thumb_dir = _ensure_thumbnail_dir()
+    # Use a deterministic file name for the thumbnail
+    thumb_name = abs_path.relative_to(RESULTS_DIR).as_posix().replace('/', '_').replace('\\', '_') + '.png'
+    thumb_path = (thumb_dir / thumb_name).resolve()
+
+    # Regenerate thumbnail if missing or outdated
+    try:
+        source_mtime = abs_path.stat().st_mtime
+        need_build = True
+        if thumb_path.exists():
+            thumb_mtime = thumb_path.stat().st_mtime
+            need_build = thumb_mtime < source_mtime
+        if need_build:
+            # Generate synchronously to ensure we have something to serve
+            _html_to_thumbnail(abs_path, thumb_path)
+    except Exception as e:
+        print(f"[WARN] Error preparing thumbnail for {abs_path}: {e}")
+
+    if thumb_path.exists():
+        return send_file(str(thumb_path), mimetype='image/png')
+    else:
+        # Last-resort: return an inline SVG placeholder so UI always shows something
+        placeholder = _html_preview_placeholder_svg(abs_path.name)
+        return send_file(io.BytesIO(placeholder), mimetype='image/svg+xml')
 
 def open_browser():
     """Function to open the browser to the dashboard URL."""
@@ -1283,6 +2664,9 @@ if __name__ == "__main__":
     
     if missing_deps:
         print(f"💡 To install missing dependencies: pip install {' '.join(missing_deps)}")
+    
+    # Ensure Thai fonts are registered for ReportLab
+    ensure_thai_fonts()
     
     Timer(3, open_browser).start()
     app.run(debug=True, port=5000, use_reloader=False) 

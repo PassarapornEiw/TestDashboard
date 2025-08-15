@@ -66,12 +66,12 @@
                         <div id="latest-status-badge"></div>
                         <div id="latest-run-info" class="latest-run-info" style="margin-bottom: 10px;"></div>
                         <div class="chart-actions">
-                            <button id="exportPdfBtn" class="btn btn-primary" style="margin-right: 10px;">
-                                <span style="font-size: 1.2em;">📄</span> Export PDF Report
+                            <button id="exportPdfBtn" class="btn btn-primary" style="margin-right: 8px; display: inline-block;" onclick="downloadLatestPDF()">
+                                📄 Download PDF
                             </button>
-                            <button id="robotReportBtn" class="btn btn-secondary">
-                                <span style="font-size: 1.2em;">🤖</span> Robot Report
-                            </button>
+                            <a id="robotReportBtn" href="#" class="btn btn-secondary" style="display: inline-block;">
+                                🤖 Robot Report
+                            </a>
                         </div>
                     </div>
                 </div>
@@ -146,36 +146,12 @@
         </div>
     </div>
 
-    <!-- Modal for Export PDF options -->
-    <div id="exportPdfModal" class="modal" style="display: none;">
-        <div class="modal-content" style="max-width: 400px;">
-            <div class="modal-header">
-                <h2>Export Test Result Report</h2>
-                <span class="close" onclick="hideExportModal()">&times;</span>
-            </div>
-            <div class="modal-body">
-                <form id="exportPdfForm">
-                    <label><b>Export Scope:</b></label><br>
-                    <input type="radio" name="scope" value="latest" checked> Latest Run Only<br>
-                    <input type="radio" name="scope" value="date_range"> Custom Date Range<br>
-                    <div id="dateRangeFields" style="display:none; margin-left: 20px;">
-                        <label>From: <input type="date" name="start_date"></label><br>
-                        <label>To: <input type="date" name="end_date"></label><br>
-                    </div>
-                    <input type="radio" name="scope" value="features"> Specific Features<br>
-                    <div id="featureListFields" style="display:none; margin-left: 20px;">
-                        <div id="featureCheckboxList">Loading...</div>
-                    </div>
-                    <hr>
-                    <label><input type="checkbox" name="include_screenshots" checked> Include Screenshots</label><br>
-                    <label><input type="checkbox" name="include_details" checked> Include Test Details</label><br>
-                    <label><input type="checkbox" name="include_summary" checked> Include Summary Statistics</label><br>
-                </form>
-            </div>
-            <div class="modal-footer" style="text-align: right;">
-                <button class="btn btn-secondary" type="button" onclick="hideExportModal()">Cancel</button>
-                <button class="btn btn-primary" id="exportPdfSubmitBtn" type="button">Export</button>
-            </div>
+    <!-- PDF Loading Overlay -->
+    <div id="pdfLoadingOverlay" class="pdf-loading-overlay">
+        <div class="pdf-loading-content">
+            <div class="pdf-loading-spinner"></div>
+            <div class="pdf-loading-title">กำลังสร้างไฟล์ PDF</div>
+            <div class="pdf-loading-message">กรุณารอสักครู่ ระบบกำลังประมวลผลและสร้างไฟล์ PDF ให้คุณ...</div>
         </div>
     </div>
 
@@ -183,6 +159,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lightgallery/2.7.2/lightgallery.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lightgallery/2.7.2/plugins/zoom/lg-zoom.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lightgallery/2.7.2/plugins/fullscreen/lg-fullscreen.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lightgallery/2.7.2/plugins/iframe/lg-iframe.min.js"></script>
     
     <script src="{{ url_for('static', filename='dashboard.js', v='8') }}"></script>
 </body>

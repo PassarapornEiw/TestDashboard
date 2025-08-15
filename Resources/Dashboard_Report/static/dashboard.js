@@ -5,6 +5,23 @@ let currentData = null;
 let activeGallery = null; // To hold the active lightgallery instance
 let excelPreviewState = {};
 
+// PDF Loading Overlay Functions
+function showPDFLoadingOverlay() {
+    const overlay = document.getElementById('pdfLoadingOverlay');
+    if (overlay) {
+        overlay.classList.add('show');
+        document.body.classList.add('overlay-active');
+    }
+}
+
+function hidePDFLoadingOverlay() {
+    const overlay = document.getElementById('pdfLoadingOverlay');
+    if (overlay) {
+        overlay.classList.remove('show');
+        document.body.classList.remove('overlay-active');
+    }
+}
+
 // Helper function to format timestamp for display
 function formatTimestamp(timestamp) {
     try {
@@ -99,25 +116,6 @@ const featureColgroup = `
 document.addEventListener('DOMContentLoaded', function() {
     initializeDashboard();
     setupEventListeners();
-    const exportBtn = document.getElementById('exportPdfBtn');
-    if (exportBtn) {
-        exportBtn.addEventListener('click', showExportModal);
-    }
-    const exportModal = document.getElementById('exportPdfModal');
-    const exportForm = document.getElementById('exportPdfForm');
-    const exportSubmitBtn = document.getElementById('exportPdfSubmitBtn');
-    if (exportSubmitBtn) {
-        exportSubmitBtn.addEventListener('click', handleExportRequest);
-    }
-    // Show/hide date range and feature list fields
-    if (exportForm) {
-        exportForm.scope.forEach(radio => {
-            radio.addEventListener('change', function() {
-                document.getElementById('dateRangeFields').style.display = (this.value === 'date_range') ? 'block' : 'none';
-                document.getElementById('featureListFields').style.display = (this.value === 'features') ? 'block' : 'none';
-            });
-        });
-    }
 });
 
 // Initialize dashboard
@@ -185,25 +183,34 @@ function setupEventListeners() {
         }
     });
 
-    // Export PDF button event listener
-    const exportPdfBtn = document.getElementById('exportPdfBtn');
-    if (exportPdfBtn) {
-        exportPdfBtn.addEventListener('click', showExportModal);
-    }
+    // Download PDF button event listener
+    // Note: exportPdfBtn now uses onclick="downloadLatestPDF()" in HTML
+    // No additional event listener needed
 
     // Robot Report button event listener
     const robotReportBtn = document.getElementById('robotReportBtn');
     if (robotReportBtn) {
         robotReportBtn.addEventListener('click', function() {
-            // Open the latest robot report if available
+            // Use the same logic as downloadLatestRobotReport function
             if (testData && testData.length > 0) {
-                const latestRun = testData[0]; // Get the most recent run
+                const latestRun = testData[0];
                 const cleanTimestamp = latestRun.timestamp.trim();
                 const reportFilename = `report-${cleanTimestamp.replace(/_/g, '-')}.html`;
                 const reportUrl = `/results/${cleanTimestamp}/${reportFilename}`;
                 
-                console.log('Attempting to open robot report:', reportUrl);
-                window.open(reportUrl, '_blank');
+                // Check if the report file exists before opening
+                fetch(reportUrl, { method: 'HEAD' })
+                    .then(response => {
+                        if (response.ok) {
+                            window.open(reportUrl, '_blank');
+                        } else {
+                            alert(`Robot report not found for run: ${cleanTimestamp}\n\nPlease check if the report file exists at:\n${reportUrl}`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error checking robot report:', error);
+                        alert(`Error checking robot report for run: ${cleanTimestamp}\n\nPlease check if the report file exists at:\n${reportUrl}`);
+                    });
             } else {
                 alert('No robot report available. Please run tests first.');
             }
@@ -414,10 +421,10 @@ function renderTimestampAccordion() {
                 <td style="text-align: center;"><span class="status-badge ${statusClass}">${statusText}</span></td>
                 <td style="text-align: center; font-weight: bold;">(<span style="color: #8B4513;">${run.total}</span>) <span style="color: #28a745;">${run.passed}</span>/<span style="color: #dc3545;">${run.failed}</span></td>
                 <td style="text-align: center; font-weight: bold;">${passRate.toFixed(2)}%</td>
-                <td style="text-align: center; white-space: nowrap;">
-                    <button class="btn btn-primary" onclick="exportRunPDF('${cleanTimestamp}')" style="margin-right: 8px; display: inline-block;">📄 Export PDF</button>
-                    <a href="/results/${cleanTimestamp}/${reportFilename}" target="_blank" class="btn btn-secondary" style="display: inline-block;">🤖 Robot Report</a>
-                </td>
+                        <td style="text-align: center; white-space: nowrap;">
+            <button class="btn btn-primary" onclick="event.stopPropagation(); downloadAllPDFsForRun('${cleanTimestamp}', ${runIndex})" style="margin-right: 8px; display: inline-block;">📄 Download PDF</button>
+            <button class="btn btn-secondary" onclick="event.stopPropagation(); checkAndOpenRobotReport('${cleanTimestamp}')" style="display: inline-block;">🤖 Robot Report</button>
+        </td>
             </tr>
         `;
 
@@ -444,7 +451,7 @@ function renderTimestampAccordion() {
                         <td style="text-align: center; font-weight: bold;">(<span style="color: #8B4513;">${feature.total}</span>) <span style="color: #28a745;">${feature.passed}</span>/<span style="color: #dc3545;">${feature.failed}</span></td>
                         <td style="text-align: center; font-weight: bold;">${featurePassRate}%</td>
                         <td style="text-align: center;">
-                            <button class="btn btn-primary" onclick="viewFeatureDetailsInRunAsync(${runIndex}, ${featureIndex})">
+                            <button class="btn btn-primary" onclick="event.stopPropagation(); viewFeatureDetailsInRunAsync(${runIndex}, ${featureIndex})">
                                 👁️ View Details
                             </button>
                         </td>
@@ -672,8 +679,14 @@ async function viewFeatureDetailsInRun(runIndex, featureIndex) {
         </div>
         
         <div class="mb-20">
-            <h3>📸 TEST EVIDENCE SCREENSHOTS</h3>
-            <div class="feature-label-large"><strong>Feature:</strong> ${feature.feature_name}</div>
+            <div class="header-with-button">
+                <h3>📸 TEST EVIDENCE SCREENSHOTS</h3>
+                <button class="btn btn-primary download-all-pdfs-btn" 
+                        onclick="downloadAllTestCasesPDF('${feature.feature_name}', '${feature.run_timestamp}', ${runIndex}, ${featureIndex})"
+                        title="Download all test case PDFs as ZIP">
+                    📦 Download All PDFs
+                </button>
+            </div>
             ${await generateTestCaseGallery(feature, testCaseDetails, galleryId)}
         </div>
     `;
@@ -681,7 +694,10 @@ async function viewFeatureDetailsInRun(runIndex, featureIndex) {
     modal.style.display = 'block';
 
     // Initialize separate LightGallery instances for each test case
-    initializeTestCaseGalleries(galleryId);
+    console.log('[DEBUG] About to initialize LightGallery for gallery:', galleryId);
+    setTimeout(() => {
+        initializeTestCaseGalleries(galleryId);
+    }, 100); // Small delay to ensure DOM is ready
 }
 
 // Function to get test case details with pass/fail status
@@ -746,13 +762,21 @@ async function getExcelData(excelPath) {
     }
 }
 
+// Function to format text with line breaks
+function formatTextWithLineBreaks(text) {
+    if (!text) return '';
+    return text.toString()
+        .replace(/\r\n/g, '\n') // แปลง \r\n เป็น \n
+        .replace(/\r/g, '\n'); // แปลง \r เป็น \n
+}
+
 // Function to get description from Excel data
 function getDescriptionFromExcelData(excelData, testCaseId) {
     if (!excelData) return null;
     
     // Find relevant columns
     const idColumns = ['Test Case ID', 'TestCaseID', 'Test Case', 'ID', 'TestCase', 'TestCaseNo'];
-    const descColumns = ['TestCaseDescription', 'Test Case Description', 'Description', 'Name'];
+    const descColumns = ['Test Case Description', 'TestCaseDescription', 'Description', 'Test Description', 'Name'];
     
     const idCol = excelData.headers.find(h => idColumns.includes(h));
     const descCol = excelData.headers.find(h => descColumns.includes(h));
@@ -767,7 +791,7 @@ function getDescriptionFromExcelData(excelData, testCaseId) {
     });
     
     if (matchingRow && matchingRow[descCol]) {
-        return matchingRow[descCol].toString().trim();
+        return formatTextWithLineBreaks(matchingRow[descCol].toString().trim());
     }
     
     return null;
@@ -779,7 +803,7 @@ function getErrorFromExcelData(excelData, testCaseId) {
     
     // Find relevant columns
     const idColumns = ['Test Case ID', 'TestCaseID', 'Test Case', 'ID', 'TestCase', 'TestCaseNo'];
-    const errorColumns = ['Fail_Description', 'TestResult_Description', 'Error', 'Failure Reason', 'Error Message'];
+    const errorColumns = ['Fail_Description', 'TestResult_Description', 'Error', 'Fail Description', 'Failure Reason', 'Error Message'];
     
     const idCol = excelData.headers.find(h => idColumns.includes(h));
     const errorCol = excelData.headers.find(h => errorColumns.includes(h));
@@ -795,7 +819,35 @@ function getErrorFromExcelData(excelData, testCaseId) {
     
     if (matchingRow && matchingRow[errorCol]) {
         const errorMsg = matchingRow[errorCol].toString().trim();
-        return errorMsg !== '' ? errorMsg : null;
+        return errorMsg !== '' ? formatTextWithLineBreaks(errorMsg) : null;
+    }
+    
+    return null;
+}
+
+// Function to get expected result from Excel data
+function getExpectedResultFromExcelData(excelData, testCaseId) {
+    if (!excelData) return null;
+    
+    // Find relevant columns
+    const idColumns = ['Test Case ID', 'TestCaseID', 'Test Case', 'ID', 'TestCase', 'TestCaseNo'];
+    const expectedResultColumns = ['ExpectedResult', 'Expected Result', 'Expected', 'Expected Outcome'];
+    
+    const idCol = excelData.headers.find(h => idColumns.includes(h));
+    const expectedResultCol = excelData.headers.find(h => expectedResultColumns.includes(h));
+    
+    if (!idCol || !expectedResultCol) return null;
+    
+    // Find matching row
+    const matchingRow = excelData.rows.find(row => {
+        const rowId = row[idCol];
+        return rowId && (rowId.toString() === testCaseId.toString() || 
+                       testCaseId.startsWith(rowId.toString() + '_'));
+    });
+    
+    if (matchingRow && matchingRow[expectedResultCol]) {
+        const expectedResult = matchingRow[expectedResultCol].toString().trim();
+        return expectedResult !== '' ? formatTextWithLineBreaks(expectedResult) : null;
     }
     
     return null;
@@ -827,32 +879,10 @@ async function generateTestCaseGallery(feature, testCaseDetails, galleryId) {
             statusBadge = '<span class="status-badge test-case-badge" style="background: linear-gradient(135deg, #999 0%, #777 100%); color: white; box-shadow: 0 4px 15px rgba(153, 153, 153, 0.4);">UNKNOWN</span>';
         }
         
-        // Get test case description and error message from Excel data
+        // Get test case description, fail description (always read), and expected result from Excel data
         const testCaseDescription = getDescriptionFromExcelData(excelData, excelTestCaseId);
-        const errorMessage = status === 'fail' ? getErrorFromExcelData(excelData, excelTestCaseId) : null;
-        
-        // Add test case header with status
-        html += `
-            <div class="test-case-header">
-                <div class="test-case-title-group">
-                    <span class="test-case-title">Test Case: ${excelTestCaseId}</span>
-                    ${statusBadge}
-                </div>
-            </div>
-        `;
-        
-        // Add description if available
-        if (testCaseDescription) {
-            html += `<div class="test-case-description"><strong>Description:</strong> ${testCaseDescription}</div>`;
-        }
-        
-        // Add error message if failed
-        if (errorMessage) {
-            html += `<div class="test-case-error"><div class="test-case-error-title">❌ Failure Reason:</div>${errorMessage}</div>`;
-        }
-        
-        // Create unique gallery ID for this specific test case
-        const testCaseGalleryId = `${galleryId}-testcase-${testCaseIndex}`;
+        const failDescription = getErrorFromExcelData(excelData, excelTestCaseId);
+        const expectedResult = getExpectedResultFromExcelData(excelData, excelTestCaseId);
         
         // Find matching screenshot folder for this Excel test case
         let matchingImages = [];
@@ -876,26 +906,29 @@ async function generateTestCaseGallery(feature, testCaseDetails, galleryId) {
             }
         }
         
-        // Grid for images of this test case
+        // Create unique gallery ID for this specific test case
+        const testCaseGalleryId = `${galleryId}-testcase-${testCaseIndex}`;
+        
+        // Prepare screenshot gallery HTML
+        let screenshotGalleryHtml = '';
         if (matchingImages && matchingImages.length > 0) {
-            // Filter out files with "PDF" in the filename (case insensitive)
-            const filteredImages = matchingImages.filter(imgPath => {
+            // Filter out only invalid paths, show all valid images including PDFs
+            const validImages = matchingImages.filter(imgPath => {
                 // Check if imgPath is valid
                 if (!imgPath || typeof imgPath !== 'string' || imgPath.trim() === '') {
                     console.warn('[DEBUG] Invalid imgPath in test evidence:', imgPath);
                     return false; // Remove invalid paths
                 }
-                const imgFileName = imgPath.split('/').pop();
-                return !imgFileName.toUpperCase().includes('PDF');
+                return true; // Show all valid images including PDFs
             });
             
-            if (filteredImages.length > 0) {
+            if (validImages.length > 0) {
                 const maxPreviewImages = 3; // แสดง 3 รูปแรก
-                const previewImages = filteredImages.slice(0, maxPreviewImages);
+                const previewImages = validImages.slice(0, maxPreviewImages);
             
-                html += `<div class="features-grid test-case-gallery" data-gallery-id="${testCaseGalleryId}">`;
+                screenshotGalleryHtml += `<div class="features-grid test-case-gallery" data-gallery-id="${testCaseGalleryId}">`;
                 
-                // Show preview images
+                // Show preview images (including HTML as thumbnail via API)
                 previewImages.forEach(imgPath => {
                     // Validate imgPath before using
                     if (!imgPath || typeof imgPath !== 'string' || imgPath.trim() === '') {
@@ -913,25 +946,41 @@ async function generateTestCaseGallery(feature, testCaseDetails, galleryId) {
                             fixedPath = '/results/' + imgPath;
                         }
                     }
-                    
-                    html += `
-                        <a href="${fixedPath}" data-lg-size="1600-1200" class="gallery-item" data-sub-html="<h4>${imgFileName}</h4><p>Test Case: ${excelTestCaseId} (${status.toUpperCase()})</p>">
-                            <img src="${fixedPath}" alt="Test Evidence for ${excelTestCaseId}: ${imgFileName}" />
-                            <div class="gallery-item-info">
-                                <span>${imgFileName}</span>
-                                <br><small>Test Case: ${excelTestCaseId}</small>
-                            </div>
-                        </a>
-                    `;
+                    const isHtml = fixedPath.toLowerCase().endsWith('.html') || fixedPath.toLowerCase().endsWith('.htm');
+                    const relForApi = fixedPath.startsWith('/results/') ? fixedPath.slice(1) : fixedPath.replace(/^\//, '');
+                    const thumbSrc = isHtml ? (`/api/html_thumbnail?path=${encodeURIComponent(relForApi)}`) : fixedPath;
+
+                    if (isHtml) {
+                        // Open HTML evidence in a new tab and exclude from LightGallery
+                        screenshotGalleryHtml += `
+                            <a href="${fixedPath}" target="_blank" rel="noopener" class="gallery-item gallery-item-html" data-type="html" data-sub-html="<h4>${imgFileName}</h4>">
+                                <img src="${thumbSrc}" alt="HTML Evidence for ${actualFolderName}: ${imgFileName}" loading="lazy" />
+                                <div class="gallery-item-info">
+                                    <span>${imgFileName}</span>
+                                    <br><small>Test Case: ${actualFolderName}</small>
+                                </div>
+                            </a>
+                        `;
+                    } else {
+                        screenshotGalleryHtml += `
+                            <a href="${fixedPath}" class="gallery-item gallery-item-image" data-type="image" data-sub-html="<h4>${imgFileName}</h4>" data-lg-size="1600-1200">
+                                <img src="${thumbSrc}" alt="Test Evidence for ${actualFolderName}: ${imgFileName}" loading="lazy" />
+                                <div class="gallery-item-info">
+                                    <span>${imgFileName}</span>
+                                    <br><small>Test Case: ${actualFolderName}</small>
+                                </div>
+                            </a>
+                        `;
+                    }
                 });
                 
                 // Add "ดูรูปเพิ่มเติม" button if there are more than 4 images
-                if (filteredImages.length > 4) {
-                    // Ensure filteredImages are all valid before stringifying
-                    const safeImages = filteredImages.filter(img => img && typeof img === 'string' && img.trim() !== '');
-                    console.log('[DEBUG] Safe images for more button:', safeImages.length, 'out of', filteredImages.length);
+                if (validImages.length > 4) {
+                    // Ensure validImages are all valid before stringifying
+                    const safeImages = validImages.filter(img => img && typeof img === 'string' && img.trim() !== '');
+                    console.log('[DEBUG] Safe images for more button:', safeImages.length, 'out of', validImages.length);
                     
-                    html += `
+                    screenshotGalleryHtml += `
                         <button class="btn btn-secondary"
                             data-testcase-name="${excelTestCaseId}"
                             data-status="${status}"
@@ -942,17 +991,46 @@ async function generateTestCaseGallery(feature, testCaseDetails, galleryId) {
                     `;
                 }
                 
-                html += '</div>';
+                screenshotGalleryHtml += '</div>';
             } else {
-                html += '<div class="features-grid test-case-gallery" data-gallery-id="${testCaseGalleryId}">';
-                html += '<div class="no-screenshot-placeholder">No screenshot found</div>';
-                html += '</div>';
+                screenshotGalleryHtml += '<div class="features-grid test-case-gallery" data-gallery-id="${testCaseGalleryId}">';
+                screenshotGalleryHtml += '<div class="no-screenshot-placeholder">No screenshot found</div>';
+                screenshotGalleryHtml += '</div>';
             }
         } else {
             // No matching screenshot folder found - show "No screenshot found"
-            html += '<div class="features-grid test-case-gallery" data-gallery-id="${testCaseGalleryId}">';
-            html += '<div class="no-screenshot-placeholder">No screenshot found</div>';
-            html += '</div>';
+            screenshotGalleryHtml += '<div class="features-grid test-case-gallery" data-gallery-id="${testCaseGalleryId}">';
+            screenshotGalleryHtml += '<div class="no-screenshot-placeholder">No screenshot found</div>';
+            screenshotGalleryHtml += '</div>';
+        }
+        
+        // Add test case header with new layout (including screenshots and error message inside the same container)
+        html += `
+            <div class="test-case-header-new">
+                <div class="test-case-title-row">
+                    <span class="test-case-title-new">Test Case: ${actualFolderName}</span>
+                    ${statusBadge}
+                    <button class="btn btn-sm btn-outline-primary test-case-pdf-btn" 
+                            onclick="exportTestCasePDF('${excelTestCaseId}', '${feature.feature_name}', '${feature.run_timestamp}')"
+                            title="Export Test Case PDF">
+                        📄 Download PDF
+                    </button>
+                </div>
+                
+                <div class="test-information-box">
+                    ${testCaseDescription ? `<div class="info-row"><span class="info-label">Description:</span> <div class="info-content">${testCaseDescription}</div></div>` : ''}
+                    ${expectedResult ? `<div class="info-row"><span class="info-label">Expected Result:</span> <div class="info-content">${expectedResult}</div></div>` : ''}
+                </div>
+
+                ${(() => { const content = (failDescription && failDescription.trim() !== '' ? failDescription : '-'); return `<div class=\"test-case-error\"><div class=\"test-case-error-title\">❌ Fail Description:</div><div class=\"error-content\">${content}</div></div>`; })()}
+                
+                ${screenshotGalleryHtml}
+            </div>
+        `;
+        
+        // Add separator between test cases (except for the last one) - AFTER screenshots
+        if (testCaseIndex < Object.keys(testCaseDetails).length - 1) {
+            html += `<div class="test-case-separator"></div>`;
         }
         
         testCaseIndex++;
@@ -1011,7 +1089,11 @@ async function previewExcel(excelPath, targetElementId) {
             tableHtml += '<tr>';
             filteredHeaders.forEach(header => {
                 const cellValue = row[header] || '';
-                tableHtml += `<td>${cellValue}</td>`;
+                // ใช้ formatTextWithLineBreaks เพื่อรักษาการขึ้นบรรทัดใหม่
+                const formattedValue = formatTextWithLineBreaks(cellValue);
+                // แปลง \n เป็น <br> เพื่อแสดงการขึ้นบรรทัดใหม่ใน HTML
+                const htmlValue = formattedValue.replace(/\n/g, '<br>');
+                tableHtml += `<td>${htmlValue}</td>`;
             });
             tableHtml += '</tr>';
         });
@@ -1037,31 +1119,10 @@ function closeModal() {
     }
 }
 
-// Export PDF for specific run
-async function exportRunPDF(timestamp) {
+// Unified PDF export function
+async function exportPDF(options, customFilename = null) {
     try {
-        // Find the specific run based on timestamp
-        const targetRun = testData.find(run => run.timestamp === timestamp);
-        if (!targetRun) {
-            alert('Run not found!');
-            return;
-        }
-
-        // Get all feature names from this run
-        const runFeatures = targetRun.features.map(f => f.feature_name);
-        
-        // Use date_range scope with specific timestamp to ensure only this run is included
-        const options = {
-            scope: 'date_range',
-            features: runFeatures,
-            start_date: timestamp,
-            end_date: timestamp,
-            include_screenshots: true,
-            include_details: true,
-            include_summary: true
-        };
-
-        console.log(`Exporting PDF for specific run ${timestamp} with options:`, options);
+        console.log('Sending PDF export request with options:', options);
         
         const response = await fetch('/api/export_pdf', {
             method: 'POST',
@@ -1069,18 +1130,179 @@ async function exportRunPDF(timestamp) {
             body: JSON.stringify(options)
         });
         
+        console.log('PDF export response status:', response.status);
+        
         if (response.ok) {
             const blob = await response.blob();
-            const formattedDate = formatTimestamp(timestamp).replace(/[\/\s:]/g, '_');
-            downloadPDF(blob, `TestReport_${formattedDate}`);
+            console.log('PDF blob size:', blob.size);
+            downloadPDF(blob, customFilename);
+            return true;
         } else {
             const errorText = await response.text();
             console.error('PDF export failed:', response.status, errorText);
             alert(`Export failed: ${response.status} - ${errorText}`);
+            return false;
         }
     } catch (error) {
         console.error('PDF export error:', error);
         alert(`Export error: ${error.message}`);
+        return false;
+    }
+}
+
+// Export PDF for specific run
+async function exportRunPDF(timestamp) {
+    // Find the specific run based on timestamp
+    const targetRun = testData.find(run => run.timestamp === timestamp);
+    if (!targetRun) {
+        alert('Run not found!');
+        return;
+    }
+
+    // Get all feature names from this run
+    const runFeatures = targetRun.features.map(f => f.feature_name);
+    
+    // Use date_range scope with specific timestamp to ensure only this run is included
+    const options = {
+        scope: 'date_range',
+        features: runFeatures,
+        start_date: timestamp,
+        end_date: timestamp,
+        include_screenshots: true,
+        include_details: true,
+        include_summary: true
+    };
+
+    console.log(`Exporting PDF for specific run ${timestamp} with options:`, options);
+    
+    // Use consistent filename format with server
+    const formattedDate = formatTimestamp(timestamp).replace(/[\/\s:]/g, '_');
+    const customFilename = `DRDB_TestReport_${formattedDate}`;
+    
+    await exportPDF(options, customFilename);
+}
+
+// Function to export individual test case PDF
+async function exportTestCasePDF(testCaseId, featureName, runTimestamp) {
+    try {
+        console.log(`[DEBUG] Starting PDF export for test case: ${testCaseId} from ${featureName} (${runTimestamp})`);
+        
+        // แสดง loading overlay
+        showPDFLoadingOverlay();
+        
+        const requestData = {
+            test_case_id: testCaseId,
+            feature_name: featureName,
+            run_timestamp: runTimestamp
+        };
+        console.log('[DEBUG] Request payload:', requestData);
+        
+        const response = await fetch('/api/export_testcase_pdf', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestData)
+        });
+
+        console.log(`[DEBUG] Response status: ${response.status}`);
+        console.log(`[DEBUG] Response headers:`, Object.fromEntries(response.headers.entries()));
+
+        if (!response.ok) {
+            console.error(`[ERROR] HTTP error ${response.status}`);
+            try {
+                const errorData = await response.json();
+                console.error('[ERROR] Error response data:', errorData);
+                
+                // Special handling for large file errors
+                if (response.status === 413) {
+                    throw new Error(`PDF ขนาดใหญ่เกินไป: ${errorData.error}\n\nระบบจะสร้าง PDF แบบย่อให้อัตโนมัติ โปรดลองอีกครั้ง`);
+                }
+                
+                throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+            } catch (parseError) {
+                console.error('[ERROR] Failed to parse error response:', parseError);
+                const errorText = await response.text();
+                console.error('[ERROR] Raw error response:', errorText);
+                
+                if (response.status === 413) {
+                    throw new Error(`PDF ขนาดใหญ่เกินไป (${response.status}). โปรดติดต่อผู้ดูแลระบบ`);
+                }
+                
+                throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+            }
+        }
+
+        const blob = await response.blob();
+        console.log(`[DEBUG] PDF blob received. Size: ${blob.size} bytes, Type: ${blob.type}`);
+        
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+        const filename = `TestCase_${testCaseId}_${featureName}_${timestamp}.pdf`;
+        console.log(`[DEBUG] Generated filename: ${filename}`);
+        
+        downloadPDF(blob, filename);
+        console.log('[DEBUG] PDF download initiated successfully');
+        
+    } catch (error) {
+        console.error('[ERROR] Error exporting test case PDF:', error);
+        console.error('[ERROR] Error stack:', error.stack);
+        alert(`Error exporting test case PDF: ${error.message}`);
+    } finally {
+        // ซ่อน loading overlay
+        hidePDFLoadingOverlay();
+    }
+}
+
+// เพิ่มฟังก์ชันใหม่สำหรับดาวน์โหลด PDF ทั้งหมด
+async function downloadAllTestCasesPDF(featureName, runTimestamp, runIndex, featureIndex) {
+    try {
+        // แสดง loading overlay
+        showPDFLoadingOverlay();
+        
+        // แสดง loading state
+        const btn = document.querySelector('.download-all-pdfs-btn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '⏳ Generating ZIP...';
+        btn.disabled = true;
+
+        // เรียก API สำหรับสร้าง ZIP file
+        const response = await fetch('/api/export_feature_pdfs_zip', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                feature_name: featureName,
+                run_timestamp: runTimestamp,
+                run_index: runIndex,
+                feature_index: featureIndex
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
+
+        // ดาวน์โหลดไฟล์ ZIP
+        const blob = await response.blob();
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+        const filename = `${featureName}_AllTestCases_${timestamp}.zip`;
+        
+        // ใช้ฟังก์ชัน downloadPDF ที่แก้ไขแล้ว (จะไม่บังคับนามสกุล .pdf)
+        downloadPDF(blob, filename);
+
+    } catch (error) {
+        console.error('Error downloading all PDFs:', error);
+        alert('Error downloading PDFs: ' + error.message);
+    } finally {
+        // ซ่อน loading overlay
+        hidePDFLoadingOverlay();
+        
+        // คืนค่าเดิมของปุ่ม
+        const btn = document.querySelector('.download-all-pdfs-btn');
+        btn.innerHTML = '📦 Download All PDFs';
+        btn.disabled = false;
     }
 }
 
@@ -1089,6 +1311,8 @@ window.viewFeatureDetailsInRun = viewFeatureDetailsInRun;
 window.closeModal = closeModal;
 window.previewExcel = previewExcel;
 window.exportRunPDF = exportRunPDF;
+window.exportTestCasePDF = exportTestCasePDF;
+window.downloadAllTestCasesPDF = downloadAllTestCasesPDF;
 
 // Async wrapper for global access
 window.viewFeatureDetailsInRunAsync = async function(runIndex, featureIndex) {
@@ -1134,31 +1358,51 @@ function renderLatestRunInfo() {
 // Initialize separate LightGallery instances for each test case
 function initializeTestCaseGalleries(galleryId) {
     const mainGallery = document.getElementById(galleryId);
-    if (!mainGallery) return;
+    if (!mainGallery) {
+        console.log('[DEBUG] Main gallery not found:', galleryId);
+        return;
+    }
     
     // Find all test case galleries within this main gallery
     const testCaseGalleries = mainGallery.querySelectorAll('.test-case-gallery');
+    console.log('[DEBUG] Found test case galleries:', testCaseGalleries.length);
     
-    testCaseGalleries.forEach(galleryElement => {
+    testCaseGalleries.forEach((galleryElement, index) => {
         if (galleryElement) {
+            console.log(`[DEBUG] Initializing LightGallery for gallery ${index}`);
+            
+            // Check if LightGallery is available
+            if (typeof lightGallery === 'undefined') {
+                console.error('[DEBUG] LightGallery not available');
+                return;
+            }
+            
+            // Check if plugins are available
+            const plugins = [];
+            if (window.lgZoom) plugins.push(window.lgZoom);
+            if (window.lgFullscreen) plugins.push(window.lgFullscreen);
+            if (window.lgIframe) plugins.push(window.lgIframe);
+            
+            console.log('[DEBUG] Available plugins:', plugins.length);
+            
             // Initialize separate LightGallery for each test case
-            lightGallery(galleryElement, {
-                plugins: [window.lgZoom, window.lgFullscreen],
-                speed: 800,                 // เพิ่มความเร็วจาก 500ms เป็น 800ms (ช้าลง)
+            const lgInstance = lightGallery(galleryElement, {
+                plugins: plugins,
+                speed: 800,
                 scale: 1.5,
                 actualSize: true,
                 download: true,
                 counter: true,
-                selector: '.gallery-item',
+                // Only attach LG to image items; HTML links open in new tab
+                selector: '.gallery-item-image',
                 appendSubHtmlTo: '.lg-item',
-                backdropDuration: 500, // เพิ่ม backdrop duration ด้วย
-                // ปรับความเร็วสำหรับ touch/swipe บนมือถือ
-                swipeThreshold: 50, // ต้องเลื่อนไกลกว่าเดิมถึงจะเปลี่ยนรูป
+                backdropDuration: 500,
+                swipeThreshold: 50,
                 touchMove: true,
                 enableSwipe: true,
                 enableTouch: true,
-                // Ensure z-index is higher than modal
                 onBeforeOpen: () => {
+                    console.log('[DEBUG] LightGallery opening');
                     setTimeout(() => {
                         const backdrop = document.querySelector('.lg-backdrop');
                         const outer = document.querySelector('.lg-outer');
@@ -1188,109 +1432,38 @@ function initializeTestCaseGalleries(galleryId) {
                             });
                         });
                     }, 50);
+                },
+                onAfterOpen: () => {
+                    console.log('[DEBUG] LightGallery opened successfully');
+                },
+                onBeforeClose: () => {
+                    console.log('[DEBUG] LightGallery closing');
                 }
             });
+            // Do not intercept click events; let LightGallery handle index mapping
         }
     });
 }
 
 
 
-// --- Export PDF Logic ---
-function showExportModal() {
-    const modal = document.getElementById('exportPdfModal');
-    if (modal) {
-        modal.style.display = 'block';
-    }
-    // Populate feature list
-    const featureCheckboxList = document.getElementById('featureCheckboxList');
-    if (featureCheckboxList) {
-        // Get unique feature names from all runs
-        const allFeatures = testData.flatMap(run => run.features.map(f => f.feature_name));
-        const uniqueFeatures = [...new Set(allFeatures)];
-        if (uniqueFeatures.length > 0) {
-            featureCheckboxList.innerHTML = uniqueFeatures.map(feature => `
-                <label>
-                    <input type="checkbox" name="selected_features" value="${feature}">
-                    ${feature}
-                </label><br>
-            `).join('');
-        } else {
-            featureCheckboxList.innerHTML = 'No features found.';
-        }
-    }
-}
 
-function hideExportModal() {
-    const modal = document.getElementById('exportPdfModal');
-    if (modal) {
-        modal.style.display = 'none';
-    }
-}
-
-async function handleExportRequest() {
-    const form = document.getElementById('exportPdfForm');
-    
-    // Fix: Get scope value correctly
-    const scopeRadio = form.querySelector('input[name="scope"]:checked');
-    const scope = scopeRadio ? scopeRadio.value : 'latest';
-    
-    let start_date = null, end_date = null, features = [];
-    if (scope === 'date_range') {
-        start_date = form.start_date ? form.start_date.value : null;
-        end_date = form.end_date ? form.end_date.value : null;
-    }
-    if (scope === 'features') {
-        features = Array.from(form.querySelectorAll('input[name="selected_features"]:checked')).map(cb => cb.value);
-    }
-    const options = {
-        scope,
-        start_date,
-        end_date,
-        features,
-        include_screenshots: form.include_screenshots.checked,
-        include_details: form.include_details.checked,
-        include_summary: form.include_summary.checked
-    };
-    // Show loading spinner on button
-    const btn = document.getElementById('exportPdfSubmitBtn');
-    btn.disabled = true;
-    btn.textContent = 'Exporting...';
-    try {
-        console.log('Sending PDF export request with options:', options);
-        
-        const response = await fetch('/api/export_pdf', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(options)
-        });
-        
-        console.log('PDF export response status:', response.status);
-        
-        if (response.ok) {
-            const blob = await response.blob();
-            console.log('PDF blob size:', blob.size);
-            downloadPDF(blob);
-            hideExportModal();
-        } else {
-            const errorText = await response.text();
-            console.error('PDF export failed:', response.status, errorText);
-            alert(`Export failed: ${response.status} - ${errorText}`);
-        }
-    } catch (e) {
-        console.error('PDF export error:', e);
-        alert(`Network error: ${e.message}`);
-    } finally {
-        btn.disabled = false;
-        btn.textContent = 'Export';
-    }
-}
 
 function downloadPDF(blob, filename = null) {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = filename ? `${filename}.pdf` : `test_report_${new Date().toISOString().replace(/[:.]/g, '-')}.pdf`;
+    
+    // Use consistent filename format - don't force .pdf extension
+    if (filename) {
+        a.download = filename; // Use filename as-is, don't append .pdf
+    } else {
+        // Use same format as server: DRDB_TestReport_YYYYMMDD_HHMMSS.pdf
+        const timestamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
+        const formattedTimestamp = timestamp.slice(0, 8) + '_' + timestamp.slice(8, 14);
+        a.download = `DRDB_TestReport_${formattedTimestamp}.pdf`;
+    }
+    
     document.body.appendChild(a);
     a.click();
     setTimeout(() => {
@@ -1448,21 +1621,44 @@ function showAllImagesModal(testCaseName, images, status) {
                        '<span class="status-badge" style="background: #999; color: white;">UNKNOWN</span>';
     
     // Create simple gallery HTML without complex attributes initially
-    const galleryHTML = images.map((imgPath, index) => {
-        const imgFileName = imgPath.split('/').pop();
-        
-        return `
-            <div class="gallery-item simple-gallery-item" data-index="${index}" data-src="${imgPath}">
-                <img src="${imgPath}" 
-                     alt="Test Evidence: ${imgFileName}" 
-                     loading="lazy"
-                     style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px;" />
-                <div class="gallery-item-info">
-                    <span>${imgFileName}</span>
-                    <br><small>Test Case: ${testCaseName}</small>
+    const galleryHTML = images.map((rawPath, index) => {
+        if (!rawPath || typeof rawPath !== 'string') return '';
+        let fixedPath = rawPath;
+        if (!rawPath.startsWith('/results/')) {
+            fixedPath = rawPath.startsWith('results/') ? ('/' + rawPath) : ('/results/' + rawPath.replace(/^\//, ''));
+        }
+        const imgFileName = fixedPath.split('/').pop();
+        const isHtml = fixedPath.toLowerCase().endsWith('.html') || fixedPath.toLowerCase().endsWith('.htm');
+        const relForApi = fixedPath.startsWith('/results/') ? fixedPath.slice(1) : fixedPath.replace(/^\//, '');
+        const thumbSrc = isHtml ? (`/api/html_thumbnail?path=${encodeURIComponent(relForApi)}`) : fixedPath;
+
+        if (isHtml) {
+            return `
+                <div class="gallery-item simple-gallery-item" data-index="${index}" data-src="${fixedPath}" data-type="html" onclick="event.preventDefault(); event.stopPropagation(); return false;">
+                    <img src="${thumbSrc}" 
+                         alt="HTML Evidence: ${imgFileName}" 
+                         loading="lazy"
+                         style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; background: #fff; border: 1px solid #eee;" />
+                    <div class="gallery-item-info">
+                        <span>${imgFileName}</span>
+                        <br><small>Test Case: ${testCaseName}</small>
+                    </div>
                 </div>
-            </div>
-        `;
+            `;
+        } else {
+            return `
+                <div class="gallery-item simple-gallery-item" data-index="${index}" data-src="${fixedPath}" data-type="image" onclick="event.preventDefault(); event.stopPropagation(); return false;">
+                    <img src="${thumbSrc}" 
+                         alt="Test Evidence: ${imgFileName}" 
+                         loading="lazy"
+                         style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px;" />
+                    <div class="gallery-item-info">
+                        <span>${imgFileName}</span>
+                        <br><small>Test Case: ${testCaseName}</small>
+                    </div>
+                </div>
+            `;
+        }
     }).join('');
     
     modal.innerHTML = `
@@ -1571,20 +1767,22 @@ function showAllImagesModal(testCaseName, images, status) {
         });
     }
     
-    // Add immediate click handlers for images (simple new tab opening)
-    const galleryItems = modal.querySelectorAll('.simple-gallery-item');
+        // Add immediate click handlers for images
+        const galleryItems = modal.querySelectorAll('.simple-gallery-item');
     console.log(`[DEBUG] Adding immediate click handlers to ${galleryItems.length} items`);
     
-    galleryItems.forEach((item, index) => {
+        galleryItems.forEach((item, index) => {
         const img = item.querySelector('img');
-        const imgSrc = item.getAttribute('data-src');
-        
-        // Add immediate click handler
+        const src = item.getAttribute('data-src');
+        const type = (item.getAttribute('data-type') || '').toLowerCase();
+
+        // HTML: open new tab; Image: handled by LightGallery upgrade later
         item.addEventListener('click', function(e) {
             e.preventDefault();
             e.stopPropagation();
-            console.log(`[DEBUG] Image ${index + 1} clicked, opening:`, imgSrc);
-            window.open(imgSrc, '_blank');
+            if (type === 'html') {
+                window.open(src, '_blank', 'noopener');
+            }
         });
         
         // Add visual feedback
@@ -1623,6 +1821,7 @@ function showAllImagesModal(testCaseName, images, status) {
     
     // Optional: Try to upgrade to LightGallery later (non-blocking)
     setTimeout(() => {
+        console.log('[DEBUG] Attempting to upgrade modal to LightGallery');
         tryUpgradeToLightGallery(modal);
     }, 1000);
 }
@@ -1646,26 +1845,38 @@ function tryUpgradeToLightGallery(modal) {
         return;
     }
     
+    // Check if plugins are available
+    const plugins = [];
+    if (window.lgZoom) plugins.push(window.lgZoom);
+    if (window.lgFullscreen) plugins.push(window.lgFullscreen);
+    if (window.lgIframe) plugins.push(window.lgIframe);
+    
+    console.log('[DEBUG] Available plugins for modal upgrade:', plugins.length);
+    
     try {
         console.log('[DEBUG] Attempting LightGallery upgrade...');
         
-        // Convert simple items to LightGallery format
+        // Convert only image items to LightGallery format; HTML items open new tab
         const galleryItems = galleryElement.querySelectorAll('.simple-gallery-item');
+        console.log('[DEBUG] Converting', galleryItems.length, 'items to LightGallery format');
         galleryItems.forEach((item, index) => {
             const imgSrc = item.getAttribute('data-src');
-            const img = item.querySelector('img');
             const fileName = imgSrc.split('/').pop();
-            
-            // Transform to LightGallery format
-            item.setAttribute('href', imgSrc);
-            item.setAttribute('data-lg-size', '1600-1200');
-            item.setAttribute('data-sub-html', `<h4>${fileName}</h4>`);
-            item.classList.add('lg-gallery-item');
+            const type = (item.getAttribute('data-type') || '').toLowerCase();
+
+            if (type !== 'html') {
+                item.setAttribute('href', imgSrc);
+                item.setAttribute('data-sub-html', `<h4>${fileName}</h4>`);
+                item.setAttribute('data-lg-size', '1600-1200');
+                item.classList.add('lg-gallery-item');
+                console.log(`[DEBUG] Converted image item ${index} for LG`);
+            }
         });
         
         // Initialize LightGallery
+        console.log('[DEBUG] Initializing LightGallery with plugins:', plugins.length);
         const lgInstance = lightGallery(galleryElement, {
-            plugins: [window.lgZoom, window.lgFullscreen],
+            plugins: plugins,
             speed: 800,
             scale: 1.5,
             actualSize: true,
@@ -1679,6 +1890,7 @@ function tryUpgradeToLightGallery(modal) {
             enableSwipe: true,
             enableTouch: true,
             onBeforeOpen: () => {
+                console.log('[DEBUG] LightGallery onBeforeOpen triggered');
                 setTimeout(() => {
                     // Set proper z-index for nested modal
                     const backdrop = document.querySelector('.lg-backdrop');
@@ -1693,6 +1905,12 @@ function tryUpgradeToLightGallery(modal) {
                     document.querySelectorAll('.lg-actions').forEach(el => el.style.zIndex = '4004');
                     document.querySelectorAll('.lg-prev, .lg-next, .lg-close').forEach(el => el.style.zIndex = '4005');
                 }, 50);
+            },
+            onAfterOpen: () => {
+                console.log('[DEBUG] LightGallery onAfterOpen triggered');
+            },
+            onBeforeClose: () => {
+                console.log('[DEBUG] LightGallery onBeforeClose triggered');
             }
         });
         
@@ -1708,8 +1926,22 @@ function tryUpgradeToLightGallery(modal) {
             instructionElement.innerHTML = `จำนวนรูปทั้งหมด: ${galleryItems.length} รูป (คลิกที่รูปเพื่อเปิด Gallery View)`;
         }
         
+        // Store instance for cleanup
+        galleryElement.lgInstance = lgInstance;
+        window.currentAllImagesLG = lgInstance;
+        
+        // Test click on first item to see if it works
+        const firstItem = galleryElement.querySelector('.lg-gallery-item');
+        if (firstItem) {
+            console.log('[DEBUG] First gallery item found, testing click functionality');
+            console.log('[DEBUG] First item href:', firstItem.getAttribute('href'));
+            console.log('[DEBUG] First item data-iframe:', firstItem.getAttribute('data-iframe'));
+            console.log('[DEBUG] First item data-lg-size:', firstItem.getAttribute('data-lg-size'));
+        }
+        
     } catch (error) {
         console.log('[DEBUG] LightGallery upgrade failed, keeping simple handlers:', error);
+        console.error('[DEBUG] Error details:', error);
         // Keep existing simple handlers - no problem
     }
 }
@@ -1782,4 +2014,236 @@ function closeAllImagesModal() {
             });
         }
     }, 300); // Wait 300ms for cleanup to complete
+}
+
+// 1. เพิ่มฟังก์ชัน downloadLatestPDF() และ downloadLatestRobotReport()
+async function downloadLatestPDF() {
+    if (!currentData || !currentData.timestamp || !currentData.features || currentData.features.length === 0) {
+        alert('No test data available. Please run tests first.');
+        return;
+    }
+
+    try {
+        // แสดง loading overlay
+        showPDFLoadingOverlay();
+        
+        // แสดง loading state
+        const btn = document.getElementById('exportPdfBtn');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '⏳ Generating ZIP...';
+        btn.disabled = true;
+
+        // เรียก API สำหรับสร้าง ZIP file ที่มี PDF ของทุก feature
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
+        
+        try {
+            const response = await fetch('/api/export_latest_all_features_zip', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    run_timestamp: currentData.timestamp,
+                    features: currentData.features.map(f => ({
+                        name: f.feature_name || f.name,
+                        excel_path: f.excel_path
+                    }))
+                }),
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            let errorMessage = `HTTP error! status: ${response.status}`;
+            try {
+                const errorData = await response.json();
+                errorMessage = errorData.error || errorMessage;
+            } catch (jsonError) {
+                // If response is not JSON (e.g., HTML error page), try to get text
+                try {
+                    const errorText = await response.text();
+                    if (errorText.includes('<!doctype') || errorText.includes('<html')) {
+                        errorMessage = 'Server error occurred. The request may have timed out or the server is overloaded.';
+                    } else {
+                        errorMessage = errorText.substring(0, 200) + (errorText.length > 200 ? '...' : '');
+                    }
+                } catch (textError) {
+                    errorMessage = `HTTP error! status: ${response.status}`;
+                }
+            }
+            throw new Error(errorMessage);
+        }
+
+        // ดาวน์โหลดไฟล์ ZIP
+        const blob = await response.blob();
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+        const filename = `LatestRun_AllFeatures_${timestamp}.zip`;
+        
+        downloadPDF(blob, filename);
+        
+        } catch (fetchError) {
+            clearTimeout(timeoutId);
+            if (fetchError.name === 'AbortError') {
+                throw new Error('Request timed out. The PDF generation is taking too long.');
+            }
+            throw fetchError;
+        }
+
+    } catch (error) {
+        console.error('Error downloading latest PDFs:', error);
+        alert('Error downloading PDFs: ' + error.message);
+    } finally {
+        // ซ่อน loading overlay
+        hidePDFLoadingOverlay();
+        
+        // คืนค่าเดิมของปุ่ม
+        const btn = document.getElementById('exportPdfBtn');
+        btn.innerHTML = '📄 Download PDF';
+        btn.disabled = false;
+    }
+}
+window.downloadLatestPDF = downloadLatestPDF;
+
+function downloadLatestRobotReport() {
+    if (testData && testData.length > 0) {
+        const latestRun = testData[0];
+        const cleanTimestamp = latestRun.timestamp.trim();
+        const reportFilename = `report-${cleanTimestamp.replace(/_/g, '-')}.html`;
+        const reportUrl = `/results/${cleanTimestamp}/${reportFilename}`;
+        
+        // Check if the report file exists before opening
+        fetch(reportUrl, { method: 'HEAD' })
+            .then(response => {
+                if (response.ok) {
+                    window.open(reportUrl, '_blank');
+                } else {
+                    alert(`Robot report not found for run: ${cleanTimestamp}\n\nPlease check if the report file exists at:\n${reportUrl}`);
+                }
+            })
+            .catch(error => {
+                console.error('Error checking robot report:', error);
+                alert(`Error checking robot report for run: ${cleanTimestamp}\n\nPlease check if the report file exists at:\n${reportUrl}`);
+            });
+    } else {
+        alert('No robot report available. Please run tests first.');
+    }
+}
+window.downloadLatestRobotReport = downloadLatestRobotReport;
+
+// Function for Section 2 Robot Report buttons
+function checkAndOpenRobotReport(timestamp) {
+    const reportFilename = `report-${timestamp.replace(/_/g, '-')}.html`;
+    const reportUrl = `/results/${timestamp}/${reportFilename}`;
+    
+    // Check if the report file exists before opening
+    fetch(reportUrl, { method: 'HEAD' })
+        .then(response => {
+            if (response.ok) {
+                window.open(reportUrl, '_blank');
+            } else {
+                alert(`Robot report not found for run: ${timestamp}\n\nPlease check if the report file exists at:\n${reportUrl}`);
+            }
+        })
+        .catch(error => {
+            console.error('Error checking robot report:', error);
+            alert(`Error checking robot report for run: ${timestamp}\n\nPlease check if the report file exists at:\n${reportUrl}`);
+        });
+}
+window.checkAndOpenRobotReport = checkAndOpenRobotReport;
+window.downloadAllPDFsForRun = downloadAllPDFsForRun;
+
+// Function to download all PDFs for a specific run as ZIP (for History tab)
+async function downloadAllPDFsForRun(timestamp, runIndex) {
+    try {
+        const run = testData[runIndex];
+        if (!run || !run.features || run.features.length === 0) {
+            alert('No features found in this run.');
+            return;
+        }
+
+        // แสดง loading overlay
+        showPDFLoadingOverlay();
+
+        // แสดง loading state
+        const btn = document.querySelector(`[onclick*="downloadAllPDFsForRun('${timestamp}', ${runIndex})"]`);
+        if (btn) {
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '⏳ Generating ZIP...';
+            btn.disabled = true;
+        }
+
+        // เรียก API สำหรับสร้าง ZIP file ที่มี PDF ของทุก feature
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
+        
+        try {
+            const response = await fetch('/api/export_latest_all_features_zip', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    run_timestamp: timestamp,
+                    features: run.features.map(f => ({
+                        name: f.feature_name || f.name,
+                        excel_path: f.excel_path
+                    }))
+                }),
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            let errorMessage = `HTTP error! status: ${response.status}`;
+            try {
+                const errorData = await response.json();
+                errorMessage = errorData.error || errorMessage;
+            } catch (jsonError) {
+                // If response is not JSON (e.g., HTML error page), try to get text
+                try {
+                    const errorText = await response.text();
+                    if (errorText.includes('<!doctype') || errorText.includes('<html')) {
+                        errorMessage = 'Server error occurred. The request may have timed out or the server is overloaded.';
+                    } else {
+                        errorMessage = errorText.substring(0, 200) + (errorText.length > 200 ? '...' : '');
+                    }
+                } catch (textError) {
+                    errorMessage = `HTTP error! status: ${response.status}`;
+                }
+            }
+            throw new Error(errorMessage);
+        }
+
+        // ดาวน์โหลดไฟล์ ZIP
+        const blob = await response.blob();
+        const timestampStr = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+        const filename = `Run_${timestamp.replace(/[\/\s:]/g, '_')}_AllFeatures_${timestampStr}.zip`;
+        
+        downloadPDF(blob, filename);
+        
+        } catch (fetchError) {
+            clearTimeout(timeoutId);
+            if (fetchError.name === 'AbortError') {
+                throw new Error('Request timed out. The PDF generation is taking too long.');
+            }
+            throw fetchError;
+        }
+
+    } catch (error) {
+        console.error('Error downloading run PDFs:', error);
+        alert('Error downloading PDFs: ' + error.message);
+    } finally {
+        // ซ่อน loading overlay
+        hidePDFLoadingOverlay();
+        
+        // คืนค่าเดิมของปุ่ม
+        const btn = document.querySelector(`[onclick*="downloadAllPDFsForRun('${timestamp}', ${runIndex})"]`);
+        if (btn) {
+            btn.innerHTML = '📄 Download PDF';
+            btn.disabled = false;
+        }
+    }
 }
