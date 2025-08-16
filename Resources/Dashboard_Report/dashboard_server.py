@@ -153,87 +153,80 @@ def ensure_thai_fonts():
         print(f"✅ Thai fonts already loaded: {PDF_FONT_NORMAL}, {PDF_FONT_BOLD}")
         return True
 
-    # Try to use built-in CID fonts first
+    # Step 1: Look for Thai fonts first (local/system TTFs).
+    candidates = [
+        ("THSarabunNew", "THSarabunNew.ttf", "THSarabunNew-Bold", "THSarabunNew Bold.ttf"),
+        ("THSarabunNew", "THSarabunNew.ttf", "THSarabunNew-Bold", "THSarabunNew-Bold.ttf"),
+        ("Sarabun", "Sarabun-Regular.ttf", "Sarabun-Bold", "Sarabun-Bold.ttf"),
+        ("NotoSansThai", "NotoSansThai-Regular.ttf", "NotoSansThai-Bold", "NotoSansThai-Bold.ttf"),
+    ]
+    
+    search_dirs = [
+        SERVER_DIR / 'fonts',
+        PROJECT_ROOT / 'fonts',
+        Path('C:/Windows/Fonts'),
+        Path('/usr/share/fonts'),
+        Path('/usr/local/share/fonts'),
+        Path('/System/Library/Fonts'),
+        Path.home() / '.fonts',
+    ]
+    
+    print(f"[INFO] Searching for Thai fonts in: {[str(d) for d in search_dirs if d.exists()]}")
+    
+    for family_name, normal_file, bold_name, bold_file in candidates:
+        normal_path = None
+        bold_path = None
+        
+        for d in search_dirs:
+            if not d.exists():
+                continue
+                
+            if not normal_path:
+                p = d / normal_file
+                if p.exists():
+                    normal_path = p
+                    print(f"[FOUND] Normal font: {normal_path}")
+            
+            if not bold_path:
+                p = d / bold_file
+                if p.exists():
+                    bold_path = p
+                    print(f"[FOUND] Bold font: {bold_path}")
+                # Try without space
+                elif not bold_path:
+                    alt_bold = d / bold_file.replace(" ", "")
+                    if alt_bold.exists():
+                        bold_path = alt_bold
+                        print(f"[FOUND] Bold font (alt): {bold_path}")
+        
+        if normal_path and bold_path:
+            norm_reg_name = f"{family_name}-Regular"
+            bold_reg_name = f"{family_name}-Bold"
+            
+            if _try_register_font(norm_reg_name, normal_path) and \
+               _try_register_font(bold_reg_name, bold_path):
+                # IMPORTANT: Set the global variables using globals() to ensure they persist
+                globals()['PDF_FONT_NORMAL'] = norm_reg_name
+                globals()['PDF_FONT_BOLD'] = bold_reg_name
+                
+                print(f"[SUCCESS] ✅ Registered Thai fonts: {family_name}")
+                print(f"  Normal: {globals()['PDF_FONT_NORMAL']} -> {normal_path}")
+                print(f"  Bold: {globals()['PDF_FONT_BOLD']} -> {bold_path}")
+                
+                # Double check the values
+                print(f"[VERIFY] Global vars: Normal={globals()['PDF_FONT_NORMAL']}, Bold={globals()['PDF_FONT_BOLD']}")
+                
+                return True
+    
+    # If still no Thai fonts found locally, try built-in CID fonts as a fallback.
     try:
         if setup_unicode_cid_fonts():
             return True
     except Exception as e:
         print(f"⚠️ Could not register CID fonts: {e}")
 
-        # Step 2: Look for Thai fonts
-        candidates = [
-            ("THSarabunNew", "THSarabunNew.ttf", "THSarabunNew-Bold", "THSarabunNew Bold.ttf"),
-            ("THSarabunNew", "THSarabunNew.ttf", "THSarabunNew-Bold", "THSarabunNew-Bold.ttf"),
-            ("Sarabun", "Sarabun-Regular.ttf", "Sarabun-Bold", "Sarabun-Bold.ttf"),
-            ("NotoSansThai", "NotoSansThai-Regular.ttf", "NotoSansThai-Bold", "NotoSansThai-Bold.ttf"),
-        ]
-        
-        search_dirs = [
-            SERVER_DIR / 'fonts',
-            PROJECT_ROOT / 'fonts',
-            Path('C:/Windows/Fonts'),
-            Path('/usr/share/fonts'),
-            Path('/usr/local/share/fonts'),
-            Path('/System/Library/Fonts'),
-            Path.home() / '.fonts',
-        ]
-        
-        print(f"[INFO] Searching for Thai fonts in: {[str(d) for d in search_dirs if d.exists()]}")
-        
-        for family_name, normal_file, bold_name, bold_file in candidates:
-            normal_path = None
-            bold_path = None
-            
-            for d in search_dirs:
-                if not d.exists():
-                    continue
-                    
-                if not normal_path:
-                    p = d / normal_file
-                    if p.exists():
-                        normal_path = p
-                        print(f"[FOUND] Normal font: {normal_path}")
-                
-                if not bold_path:
-                    p = d / bold_file
-                    if p.exists():
-                        bold_path = p
-                        print(f"[FOUND] Bold font: {bold_path}")
-                    # Try without space
-                    elif not bold_path:
-                        alt_bold = d / bold_file.replace(" ", "")
-                        if alt_bold.exists():
-                            bold_path = alt_bold
-                            print(f"[FOUND] Bold font (alt): {bold_path}")
-            
-            if normal_path and bold_path:
-                norm_reg_name = f"{family_name}-Regular"
-                bold_reg_name = f"{family_name}-Bold"
-                
-                if _try_register_font(norm_reg_name, normal_path) and \
-                   _try_register_font(bold_reg_name, bold_path):
-                    # IMPORTANT: Set the global variables using globals() to ensure they persist
-                    globals()['PDF_FONT_NORMAL'] = norm_reg_name
-                    globals()['PDF_FONT_BOLD'] = bold_reg_name
-                    
-                    print(f"[SUCCESS] ✅ Registered Thai fonts: {family_name}")
-                    print(f"  Normal: {globals()['PDF_FONT_NORMAL']} -> {normal_path}")
-                    print(f"  Bold: {globals()['PDF_FONT_BOLD']} -> {bold_path}")
-                    
-                    # Double check the values
-                    print(f"[VERIFY] Global vars: Normal={globals()['PDF_FONT_NORMAL']}, Bold={globals()['PDF_FONT_BOLD']}")
-                    
-                    return True
-        
-        # If no Thai fonts found
-        print("[WARNING] ⚠️ No Thai fonts found! Using Helvetica (no Thai support)")
-        # Keep defaults
-        
-    except Exception as e:
-        print(f"[ERROR] Font initialization failed: {e}")
-        import traceback
-        traceback.print_exc()
-    
+    # If nothing works, warn and keep Helvetica (no Thai support)
+    print("[WARNING] ⚠️ No Thai fonts found! Using Helvetica (no Thai support)")
     return False
 
 def escape_html_for_pdf(text):
