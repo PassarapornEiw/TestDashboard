@@ -1065,7 +1065,8 @@ def export_pdf():
                 # Header styling with golden theme
                 ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#8B4513")),
                 ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                # ส่วนหัวของตารางควรใช้ฟอนต์ตัวหนาที่รองรับภาษาไทย
+                ('FONTNAME', (0,0), (-1,0), PDF_FONT_BOLD),
                 ('FONTSIZE', (0,0), (-1,0), 9),
                 ('ALIGN', (0,0), (-1,0), 'CENTER'),
                 
@@ -1225,7 +1226,8 @@ def export_pdf():
                 # Header styling
                 ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#8B4513")),
                 ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                # ส่วนหัวของตารางควรใช้ฟอนต์ตัวหนาที่รองรับภาษาไทย
+                ('FONTNAME', (0,0), (-1,0), PDF_FONT_BOLD),
                 ('FONTSIZE', (0,0), (-1,0), 8),  # Reduced font size
                 ('ALIGN', (0,0), (-1,0), 'CENTER'),
                 
@@ -1763,7 +1765,8 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
                 error_style = styles['Normal'].clone('ErrorBlockStyle')
                 error_style.fontSize = 10
                 error_style.textColor = colors.HexColor("#dc3545")
-                error_style.fontName = 'Helvetica-Bold'
+                # ใช้ฟอนต์ตัวหนาที่รองรับภาษาไทยแทนการฮาร์ดโค้ด Helvetica
+                error_style.fontName = PDF_FONT_BOLD
                 error_style.leftIndent = 6
                 error_style.rightIndent = 6
                 error_style.spaceBefore = 6
