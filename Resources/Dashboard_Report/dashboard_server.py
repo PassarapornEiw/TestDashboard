@@ -782,7 +782,7 @@ def export_pdf():
 
         # Custom styles with banking brand theme - Updated font sizes for better readability
         title_style = styles['Title'].clone('BrandTitleStyle')
-        title_style.fontSize = 18  # Reduced from 24pt to 18pt as requested
+        title_style.fontSize = 20  # Increased from 18pt to 20pt for better readability
         title_style.spaceAfter = 25
         title_style.textColor = colors.HexColor("#8B4513")
         title_style.fontName = PDF_FONT_BOLD
@@ -790,7 +790,7 @@ def export_pdf():
         
         # Banking professional heading style (Section headers)
         heading_style = styles['Heading1'].clone('BrandHeadingStyle')
-        heading_style.fontSize = 14  # Reduced from 16pt to 14pt as requested
+        heading_style.fontSize = 16  # Increased from 14pt to 16pt for better readability
         heading_style.spaceAfter = 15
         heading_style.textColor = colors.HexColor("#8B4513")  # Deep brown-gold
         heading_style.fontName = PDF_FONT_BOLD
@@ -801,7 +801,7 @@ def export_pdf():
         
         # Subheading style with golden accent
         subheading_style = styles['Heading2'].clone('BrandSubheadingStyle')
-        subheading_style.fontSize = 12  # Reduced from 14pt to 12pt as requested
+        subheading_style.fontSize = 14  # Increased from 12pt to 14pt for better readability
         subheading_style.spaceAfter = 12
         subheading_style.textColor = colors.HexColor("#DAA520")  # Golden rod
         subheading_style.fontName = PDF_FONT_BOLD
@@ -812,7 +812,7 @@ def export_pdf():
         
         # Custom feature name style (Subsection headers)
         feature_style = styles['Heading2'].clone('FeatureStyle')
-        feature_style.fontSize = 12  # Changed from 16pt to 12pt for subsection headers
+        feature_style.fontSize = 14  # Increased from 12pt to 14pt for better readability
         feature_style.spaceAfter = 15
         feature_style.textColor = colors.HexColor("#B8860B")
         feature_style.fontName = PDF_FONT_BOLD
@@ -824,14 +824,14 @@ def export_pdf():
         
         # Professional normal text style (Test case descriptions, etc.)
         normal_style = styles['Normal'].clone('BrandNormalStyle')
-        normal_style.fontSize = 10  # Reduced from 11pt to 10pt as requested
+        normal_style.fontSize = 12  # Increased from 10pt to 12pt for better readability
         normal_style.textColor = colors.HexColor("#2F4F4F")
         normal_style.fontName = PDF_FONT_NORMAL
         normal_style.leading = 12  # 1.2x line spacing (10pt * 1.2 = 12pt)
         
         # Create caption style for screenshot counts (9pt Regular as requested)
         caption_style = styles['Normal'].clone('CaptionStyle')
-        caption_style.fontSize = 9  # Screenshot captions: 9pt Regular as requested
+        caption_style.fontSize = 11  # Increased from 9pt to 11pt for better readability
         caption_style.textColor = colors.HexColor("#666666")
         caption_style.fontName = PDF_FONT_NORMAL
         caption_style.leading = 11  # 1.2x line spacing (9pt * 1.2 = 11pt)
@@ -1015,18 +1015,18 @@ def export_pdf():
             
             # Create cell styles for different column types
             feature_name_style = normal_style.clone('FeatureNameStyle')
-            feature_name_style.fontSize = 9
+            feature_name_style.fontSize = 11
             feature_name_style.fontName = PDF_FONT_BOLD
             feature_name_style.textColor = colors.HexColor("#8B4513")
             feature_name_style.alignment = 0  # Left align
             
             status_style = normal_style.clone('StatusStyle')
-            status_style.fontSize = 9
+            status_style.fontSize = 11
             status_style.fontName = PDF_FONT_BOLD
             status_style.alignment = 1  # Center align
             
             number_style = normal_style.clone('NumberStyle')
-            number_style.fontSize = 9
+            number_style.fontSize = 11
             number_style.alignment = 1  # Center align
             
             # Add data rows with simple string formatting (avoids Paragraph type issues)
@@ -1060,12 +1060,12 @@ def export_pdf():
                 ('TEXTCOLOR', (0,0), (-1,0), colors.white),
                 # ส่วนหัวของตารางควรใช้ฟอนต์ตัวหนาที่รองรับภาษาไทย
                 ('FONTNAME', (0,0), (-1,0), PDF_FONT_BOLD),
-                ('FONTSIZE', (0,0), (-1,0), 9),
+                ('FONTSIZE', (0,0), (-1,0), 11),  # เพิ่มจาก 9 เป็น 11 เพื่อให้อ่านง่ายขึ้น
                 ('ALIGN', (0,0), (-1,0), 'CENTER'),
                 
                 # Data rows styling with proper alignment
                 ('FONTNAME', (0,1), (-1,-1), PDF_FONT_NORMAL),
-                ('FONTSIZE', (0,1), (-1,-1), 9),
+                ('FONTSIZE', (0,1), (-1,-1), 11),  # เพิ่มจาก 9 เป็น 11 เพื่อให้อ่านง่ายขึ้น
                 ('ALIGN', (0,1), (0,-1), 'LEFT'),    # Feature names left-aligned
                 ('ALIGN', (1,1), (1,-1), 'CENTER'),  # Status centered
                 ('ALIGN', (2,1), (-1,-1), 'CENTER'), # Numbers centered
@@ -1221,12 +1221,12 @@ def export_pdf():
                 ('TEXTCOLOR', (0,0), (-1,0), colors.white),
                 # ส่วนหัวของตารางควรใช้ฟอนต์ตัวหนาที่รองรับภาษาไทย
                 ('FONTNAME', (0,0), (-1,0), PDF_FONT_BOLD),
-                ('FONTSIZE', (0,0), (-1,0), 8),  # Reduced font size
+                ('FONTSIZE', (0,0), (-1,0), 10),  # เพิ่มจาก 8 เป็น 10 เพื่อให้อ่านง่ายขึ้น
                 ('ALIGN', (0,0), (-1,0), 'CENTER'),
                 
                 # Data rows styling with smaller font size
                 ('FONTNAME', (0,1), (-1,-1), PDF_FONT_NORMAL),
-                ('FONTSIZE', (0,1), (-1,-1), 8),  # Reduced font size
+                ('FONTSIZE', (0,1), (-1,-1), 10),  # เพิ่มจาก 8 เป็น 10 เพื่อให้อ่านง่ายขึ้น
                 ('ALIGN', (0,1), (-1,-1), 'LEFT'),
                 ('VALIGN', (0,0), (-1,-1), 'TOP'),
                 
@@ -1378,12 +1378,12 @@ def export_pdf():
                                     except Exception as e:
                                         print(f"Error getting failure reason for {actual_folder_name}: {e}")
                                 
-                                # Handle screenshots
+                                                                # Handle screenshots and HTML files
                                 if images:
                                     # Show all screenshots, not just PDF ones
                                     all_images = images
                                     
-                                    elements.append(Paragraph(f"Total Screenshots: {len(all_images)}", caption_style))
+                                    elements.append(Paragraph(f"Total Evidence Files: {len(all_images)}", caption_style))
                                     elements.append(Spacer(1, 8))
                                     
                                     # --- High-quality image grid with original resolution and captions ---
@@ -1393,52 +1393,104 @@ def export_pdf():
                                             img_abs = PROJECT_ROOT / img_path
                                             if img_abs.exists():
                                                 try:
-                                                    # Get image filename for caption
+                                                    # Get filename for caption
                                                     img_filename = img_path.split('/')[-1]
-                                                    
-                                                    # Use PIL Image to process, ReportLab Image for PDF
-                                                    if PIL_AVAILABLE:
-                                                        with PILImage.open(str(img_abs)) as pil_img:
-                                                            # Get original dimensions
-                                                            original_width, original_height = pil_img.size
-                                                            
-                                                            # Calculate maximum dimensions for PDF (maintain aspect ratio)
-                                                            max_width_pdf = 500  # Maximum width in points
-                                                            max_height_pdf = 400  # Maximum height in points
-                                                            
-                                                            # Calculate scaling factor to maintain aspect ratio
-                                                            width_ratio = max_width_pdf / original_width
-                                                            height_ratio = max_height_pdf / original_height
-                                                            scale_ratio = min(width_ratio, height_ratio)
-                                                            
-                                                            # Calculate final dimensions for PDF
-                                                            pdf_width = original_width * scale_ratio
-                                                            pdf_height = original_height * scale_ratio
-                                                            
-                                                            # Convert to RGB if necessary and save with high quality
-                                                            if pil_img.mode in ('RGBA', 'LA', 'P'):
-                                                                rgb_img = PILImage.new('RGB', pil_img.size, (255, 255, 255))
-                                                                if pil_img.mode == 'P':
-                                                                    pil_img = pil_img.convert('RGBA')
-                                                                rgb_img.paste(pil_img, mask=pil_img.split()[-1] if pil_img.mode in ('RGBA', 'LA') else None)
-                                                                pil_img = rgb_img
-                                                            
-                                                            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_img:
-                                                                pil_img.save(temp_img.name, format='JPEG', quality=75, optimize=True, dpi=(150, 150))
-                                                                # Use original resolution with calculated PDF dimensions
-                                                                reportlab_img = ReportLabImage(temp_img.name, width=pdf_width, height=pdf_height)
+                                                    file_extension = img_path.lower().split('.')[-1] if '.' in img_path else ''
+                                    
+                                                    # Check if this is an HTML file
+                                                    if file_extension in ['html', 'htm']:
+                                                        # Convert HTML to image for PDF display with full page capture
+                                                        print(f"[DEBUG] Converting HTML to image: {img_path}")
+                                                        reportlab_img = create_html_preview_image(img_abs, max_width=500, max_height=400, full_page=True)
+                                                        
+                                                        if reportlab_img:
+                                                            pdf_width = reportlab_img.imageWidth
+                                                            pdf_height = reportlab_img.imageHeight
+                                                            print(f"[DEBUG] HTML converted successfully. Dimensions: {pdf_width}x{pdf_height}")
+                                                        else:
+                                                            # Fallback: create placeholder for HTML
+                                                            print(f"[DEBUG] HTML conversion failed, creating placeholder")
+                                                            if PIL_AVAILABLE:
+                                                                placeholder_img = PILImage.new("RGB", (500, 400), color=(245, 247, 250))
+                                                                draw = ImageDraw.Draw(placeholder_img)
+                                                                try:
+                                                                    font = ImageFont.load_default()
+                                                                except Exception:
+                                                                    font = None
+                                                                
+                                                                # Draw placeholder text
+                                                                draw.text((20, 200), "HTML Preview", fill=(64, 64, 64), font=font)
+                                                                draw.text((20, 230), img_filename[:50], fill=(96, 96, 96), font=font)
+                                                                
+                                                                with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_img:
+                                                                    placeholder_img.save(temp_img.name, format='JPEG', quality=75)
+                                                                    reportlab_img = ReportLabImage(temp_img.name, width=500, height=400)
+                                                                    pdf_width, pdf_height = 500, 400
+                                                                    
+                                                                    # Clean up temp file
+                                                                    try:
+                                                                        os.unlink(temp_img.name)
+                                                                    except:
+                                                                        pass
+                                                            else:
+                                                                # If PIL not available, create text placeholder
+                                                                elements.append(Paragraph(f"<b>HTML File:</b> {img_filename}", normal_style))
+                                                                elements.append(Paragraph("(HTML preview not available - PIL/Pillow required)", caption_style))
+                                                                elements.append(Spacer(1, 10))
+                                                                continue
                                                     else:
-                                                        # Fallback: use original image with moderate dimensions
-                                                        reportlab_img = ReportLabImage(str(img_abs), width=400, height=300)
-                                                    
+                                                        # Regular image file processing
+                                                        # Use PIL Image to process, ReportLab Image for PDF
+                                                        if PIL_AVAILABLE:
+                                                            with PILImage.open(str(img_abs)) as pil_img:
+                                                                # Get original dimensions
+                                                                original_width, original_height = pil_img.size
+                                                                
+                                                                # Calculate maximum dimensions for PDF (maintain aspect ratio)
+                                                                max_width_pdf = 500  # Maximum width in points
+                                                                max_height_pdf = 400  # Maximum height in points
+                                                                
+                                                                # Calculate scaling factor to maintain aspect ratio
+                                                                width_ratio = max_width_pdf / original_width
+                                                                height_ratio = max_height_pdf / original_height
+                                                                scale_ratio = min(width_ratio, height_ratio)
+                                                                
+                                                                # Calculate final dimensions for PDF
+                                                                pdf_width = original_width * scale_ratio
+                                                                pdf_height = original_height * scale_ratio
+                                                                
+                                                                # Convert to RGB if necessary and save with high quality
+                                                                if pil_img.mode in ('RGBA', 'LA', 'P'):
+                                                                    rgb_img = PILImage.new('RGB', pil_img.size, (255, 255, 255))
+                                                                    if pil_img.mode == 'P':
+                                                                        pil_img = pil_img.convert('RGBA')
+                                                                    rgb_img.paste(pil_img, mask=pil_img.split()[-1] if pil_img.mode in ('RGBA', 'LA') else None)
+                                                                    pil_img = rgb_img
+                                                                
+                                                                with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_img:
+                                                                    pil_img.save(temp_img.name, format='JPEG', quality=75, optimize=True, dpi=(150, 150))
+                                                                    # Use original resolution with calculated PDF dimensions
+                                                                    reportlab_img = ReportLabImage(temp_img.name, width=pdf_width, height=pdf_height)
+                                                                    
+                                                                    # Clean up temp file
+                                                                    try:
+                                                                        os.unlink(temp_img.name)
+                                                                    except:
+                                                                        pass
+                                                        else:
+                                                            # Fallback: use original image with moderate dimensions
+                                                            reportlab_img = ReportLabImage(str(img_abs), width=400, height=300)
+                                                            pdf_width, pdf_height = 400, 300
+                                    
                                                     # Create image with caption
+                                                    file_type_label = "HTML File" if file_extension in ['html', 'htm'] else "Screenshot"
                                                     img_with_caption = [
                                                         [reportlab_img],
-                                                        [Paragraph(f"<b>Filename:</b> {img_filename}", caption_style)]
+                                                        [Paragraph(f"<b>{file_type_label}:</b> {img_filename}", caption_style)]
                                                     ]
-                                                    
+                                    
                                                     # Create table for image and caption
-                                                    img_table = Table(img_with_caption, colWidths=[pdf_width if PIL_AVAILABLE else 400])
+                                                    img_table = Table(img_with_caption, colWidths=[pdf_width])
                                                     img_table.setStyle(TableStyle([
                                                         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                                                         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
@@ -1449,22 +1501,22 @@ def export_pdf():
                                                         ('TOPPADDING', (0,1), (-1,1), 5),   # Caption padding
                                                         ('BOTTOMPADDING', (0,1), (-1,1), 15), # Caption padding
                                                     ]))
-                                                    
+                                    
                                                     elements.append(img_table)
                                                     elements.append(Spacer(1, 10))
-                                                    
+                                    
                                                 except Exception as e:
-                                                    print(f"Error processing image {img_path}: {e}")
-                                                    elements.append(Paragraph(f"Error loading image: {img_path}", normal_style))
+                                                    print(f"Error processing file {img_path}: {e}")
+                                                    elements.append(Paragraph(f"Error loading file: {img_path}", normal_style))
                                                     elements.append(Spacer(1, 10))
                                             else:
-                                                elements.append(Paragraph(f"Image not found: {img_path}", normal_style))
+                                                elements.append(Paragraph(f"File not found: {img_path}", normal_style))
                                                 elements.append(Spacer(1, 10))
                                     else:
-                                        elements.append(Paragraph("No screenshots available for this test case.", caption_style))
+                                        elements.append(Paragraph("No evidence files available for this test case.", caption_style))
                                 else:
-                                    # No matching screenshot folder found - show "No screenshot found"
-                                    elements.append(Paragraph("Screenshots: No screenshot found", caption_style))
+                                    # No matching evidence folder found - show "No evidence found"
+                                    elements.append(Paragraph("Evidence Files: No evidence found", caption_style))
                                 
                                 elements.append(Spacer(1, 20))
                     else:
@@ -1476,7 +1528,7 @@ def export_pdf():
         # === FOOTER ===
         # Create footer style (8pt Regular as requested)
         footer_style = styles['Normal'].clone('FooterStyle')
-        footer_style.fontSize = 8  # Footer information: 8pt Regular as requested
+        footer_style.fontSize = 10  # Increased from 8pt to 10pt for better readability
         footer_style.textColor = colors.HexColor("#666666")
         footer_style.fontName = PDF_FONT_NORMAL  # Use Thai font
         footer_style.leading = 10  # 1.25x line spacing (8pt * 1.25 = 10pt)
@@ -1608,26 +1660,26 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
 
         # Custom styles
         title_style = styles['Title'].clone('TestCaseTitleStyle')
-        title_style.fontSize = 16
+        title_style.fontSize = 18
         title_style.spaceAfter = 20
         title_style.textColor = colors.HexColor("#8B4513")
         title_style.fontName = PDF_FONT_BOLD
         title_style.alignment = 1
         
         header_style = styles['Heading1'].clone('TestCaseHeaderStyle')
-        header_style.fontSize = 14
+        header_style.fontSize = 16
         header_style.spaceAfter = 15
         header_style.textColor = colors.HexColor("#8B4513")
         header_style.fontName = PDF_FONT_BOLD
         
         normal_style = styles['Normal'].clone('TestCaseNormalStyle')
-        normal_style.fontSize = 10
+        normal_style.fontSize = 12
         normal_style.textColor = colors.HexColor("#2F4F4F")
         normal_style.fontName = PDF_FONT_NORMAL
         normal_style.leading = 12
 
         caption_style = styles['Normal'].clone('TestCaseCaptionStyle')
-        caption_style.fontSize = 9
+        caption_style.fontSize = 11
         caption_style.textColor = colors.HexColor("#666666")
         caption_style.fontName = PDF_FONT_NORMAL
         caption_style.leading = 11
@@ -1641,30 +1693,27 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
         if test_case_status == "PASS":
             status_color = colors.HexColor("#28a745")
             status_bg_color = colors.HexColor("#d4edda")
-            status_icon = "✓"
         elif test_case_status == "FAIL":
             status_color = colors.HexColor("#dc3545")
             status_bg_color = colors.HexColor("#f8d7da")
-            status_icon = "✗"
         else:
             status_color = colors.HexColor("#6c757d")
             status_bg_color = colors.HexColor("#e2e3e5")
-            status_icon = "?"
             
         status_style = styles['Normal'].clone('StatusStyle')
-        status_style.fontSize = 16
+        status_style.fontSize = 14  # ลดขนาดลงเล็กน้อยเพื่อให้ข้อความพอดี
         status_style.fontName = PDF_FONT_BOLD
         status_style.textColor = status_color
         status_style.alignment = 1
         status_style.borderWidth = 2
         status_style.borderColor = status_color
-        status_style.borderPadding = 15
+        status_style.borderPadding = 12  # ลด padding ลงเล็กน้อย
         status_style.backColor = status_bg_color
         
         # Make status badge take the full content width so we can match the metadata table width
         content_width = A4[0] - doc.leftMargin - doc.rightMargin
         status_table = Table(
-            [[Paragraph(f"{status_icon} Test Result: {test_case_status}", status_style)]],
+            [[Paragraph(f"Test Result: {test_case_status}", status_style)]],
             colWidths=[content_width]
         )
         status_table.setStyle(TableStyle([
@@ -1694,17 +1743,17 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
         
         # Build metadata rows with Paragraphs and CJK word wrapping to avoid overflow with long text
         label_style = styles['Normal'].clone('MetaLabelStyle')
-        label_style.fontSize = 9
+        label_style.fontSize = 11  # เพิ่มจาก 9 เป็น 11 เพื่อให้อ่านง่ายขึ้น
         label_style.textColor = colors.HexColor("#8B4513")
         label_style.fontName = PDF_FONT_BOLD
-        label_style.leading = 11
+        label_style.leading = 13  # เพิ่ม leading ให้เหมาะสมกับขนาดฟอนต์
         label_style.wordWrap = 'CJK'
 
         value_style = styles['Normal'].clone('MetaValueStyle')
-        value_style.fontSize = 9
+        value_style.fontSize = 11  # เพิ่มจาก 9 เป็น 11 เพื่อให้อ่านง่ายขึ้น
         value_style.textColor = colors.HexColor("#2F4F4F")
         value_style.fontName = PDF_FONT_NORMAL
-        value_style.leading = 11
+        value_style.leading = 13  # เพิ่ม leading ให้เหมาะสมกับขนาดฟอนต์
         value_style.wordWrap = 'CJK'
 
         metadata_rows = []
@@ -1756,7 +1805,7 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
         if fail_desc_text is not None:
             try:
                 error_style = styles['Normal'].clone('ErrorBlockStyle')
-                error_style.fontSize = 10
+                error_style.fontSize = 11  # เพิ่มจาก 10 เป็น 11 เพื่อให้อ่านง่ายขึ้น
                 error_style.textColor = colors.HexColor("#dc3545")
                 # ใช้ฟอนต์ตัวหนาที่รองรับภาษาไทยแทนการฮาร์ดโค้ด Helvetica
                 error_style.fontName = PDF_FONT_BOLD
@@ -1769,7 +1818,7 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
                 error_style.borderWidth = 1
                 error_style.borderPadding = 8
                 error_style.borderRadius = 4
-                error_style.leading = 12
+                error_style.leading = 14  # เพิ่ม leading จาก 12 เป็น 14 เพื่อเว้นบรรทัดเหมาะสม
                 error_style.wordWrap = 'CJK'
 
                 # Safely escape the text to prevent XML/HTML parsing errors
@@ -1789,10 +1838,10 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
                 try:
                     print(f"[DEBUG] Trying fallback method for Fail_Description")
                     fallback_style = styles['Normal'].clone('FallbackErrorStyle')
-                    fallback_style.fontSize = 9
+                    fallback_style.fontSize = 11  # เพิ่มจาก 9 เป็น 11 เพื่อให้อ่านง่ายขึ้น
                     fallback_style.textColor = colors.HexColor("#dc3545")
                     fallback_style.fontName = PDF_FONT_NORMAL
-                    fallback_style.leading = 11
+                    fallback_style.leading = 13  # เพิ่ม leading ให้เหมาะสมกับขนาดฟอนต์
                     fallback_style.wordWrap = 'CJK'
                     
                     # Remove any potentially problematic characters and truncate if extremely long
@@ -1818,75 +1867,125 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
                         print(f"[ERROR] Even simple error message failed: {e3}")
                         # Skip this section entirely if all methods fail
 
-        # Screenshots (include all screenshots, no limit)
+        # Screenshots and HTML files (include all evidence, no limit)
         if screenshots:
-            elements.append(PageBreak())  # Start screenshots on new page
-            elements.append(Paragraph("Test Evidence Screenshots", header_style))
+            elements.append(PageBreak())  # Start evidence on new page
+            elements.append(Paragraph("Test Evidence Files", header_style))
             elements.append(Spacer(1, 15))
             
-            # Show all screenshots, not just PDF ones, but limit to prevent huge files
-            all_screenshots = screenshots
+            # Show all evidence files, not just screenshots, but limit to prevent huge files
+            all_evidence = screenshots
             
-            # Limit screenshots to prevent huge PDF files (max 20 screenshots)
-            if len(all_screenshots) > 20:
-                print(f"[WARNING] Too many screenshots ({len(all_screenshots)}), limiting to 20")
-                all_screenshots = all_screenshots[:20]
+            # Limit evidence files to prevent huge PDF files (max 20 files)
+            if len(all_evidence) > 20:
+                print(f"[WARNING] Too many evidence files ({len(all_evidence)}), limiting to 20")
+                all_evidence = all_evidence[:20]
                 
-            if all_screenshots:
-                screenshot_count_msg = f"Screenshots: {len(all_screenshots)}"
+            if all_evidence:
+                evidence_count_msg = f"Evidence Files: {len(all_evidence)}"
                 if len(screenshots) > 20:
-                    screenshot_count_msg += f" (limited from {len(screenshots)} total)"
-                elements.append(Paragraph(screenshot_count_msg, caption_style))
+                    evidence_count_msg += f" (limited from {len(screenshots)} total)"
+                elements.append(Paragraph(evidence_count_msg, caption_style))
                 elements.append(Spacer(1, 15))
                 
-                # Sort screenshots by file modification time for execution sequence
-                sorted_screenshots = sorted(all_screenshots, key=lambda img_path: (PROJECT_ROOT / img_path).stat().st_mtime if (PROJECT_ROOT / img_path).exists() else 0)
+                # Sort evidence files by file modification time for execution sequence
+                sorted_evidence = sorted(all_evidence, key=lambda file_path: (PROJECT_ROOT / file_path).stat().st_mtime if (PROJECT_ROOT / file_path).exists() else 0)
                 
-                for idx, img_path in enumerate(sorted_screenshots, 1):
-                    img_abs = PROJECT_ROOT / img_path
-                    # Get image filename (defined outside try block for error handling)
-                    img_filename = img_path.split('/')[-1] if img_path else f"image_{idx}"
+                for idx, file_path in enumerate(sorted_evidence, 1):
+                    file_abs = PROJECT_ROOT / file_path
+                    # Get filename (defined outside try block for error handling)
+                    filename = file_path.split('/')[-1] if file_path else f"file_{idx}"
+                    file_extension = file_path.lower().split('.')[-1] if '.' in file_path else ''
                     
-                    if img_abs.exists():
+                    if file_abs.exists():
                         try:
-                            # Process image with PIL for high quality
-                            if PIL_AVAILABLE:
-                                with PILImage.open(str(img_abs)) as pil_img:
-                                    # Get original dimensions
-                                    original_width, original_height = pil_img.size
-                                    
-                                    # Calculate maximum dimensions for PDF (reduced for smaller file size)
-                                    max_width_pdf = 400
-                                    max_height_pdf = 300
-                                    
-                                    # Calculate scaling factor to maintain aspect ratio
-                                    width_ratio = max_width_pdf / original_width
-                                    height_ratio = max_height_pdf / original_height
-                                    scale_ratio = min(width_ratio, height_ratio)
-                                    
-                                    # Calculate final dimensions for PDF
-                                    pdf_width = original_width * scale_ratio
-                                    pdf_height = original_height * scale_ratio
-                                    
-                                    # Convert to RGB if necessary
-                                    if pil_img.mode in ('RGBA', 'LA', 'P'):
-                                        rgb_img = PILImage.new('RGB', pil_img.size, (255, 255, 255))
-                                        if pil_img.mode == 'P':
-                                            pil_img = pil_img.convert('RGBA')
-                                        rgb_img.paste(pil_img, mask=pil_img.split()[-1] if pil_img.mode in ('RGBA', 'LA') else None)
-                                        pil_img = rgb_img
-                                    
-                                    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_img:
-                                        pil_img.save(temp_img.name, format='JPEG', quality=75, optimize=True, dpi=(150, 150))
-                                        reportlab_img = ReportLabImage(temp_img.name, width=pdf_width, height=pdf_height)
+                            # Check if this is an HTML file
+                            if file_extension in ['html', 'htm']:
+                                # Convert HTML to image for PDF display with full page capture
+                                print(f"[DEBUG] Converting HTML to image for PDF: {file_path}")
+                                reportlab_img = create_html_preview_image(file_abs, max_width=400, max_height=300, full_page=True)
+                                
+                                if reportlab_img:
+                                    pdf_width = reportlab_img.imageWidth
+                                    pdf_height = reportlab_img.imageHeight
+                                    print(f"[DEBUG] HTML converted successfully for PDF. Dimensions: {pdf_width}x{pdf_height}")
+                                else:
+                                    # Fallback: create placeholder for HTML
+                                    print(f"[DEBUG] HTML conversion failed for PDF, creating placeholder")
+                                    if PIL_AVAILABLE:
+                                        placeholder_img = PILImage.new("RGB", (400, 300), color=(245, 247, 250))
+                                        draw = ImageDraw.Draw(placeholder_img)
+                                        try:
+                                            font = ImageFont.load_default()
+                                        except Exception:
+                                            font = None
+                                        
+                                        # Draw placeholder text
+                                        draw.text((20, 150), "HTML Preview", fill=(64, 64, 64), font=font)
+                                        draw.text((20, 180), filename[:40], fill=(96, 96, 96), font=font)
+                                        
+                                        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_img:
+                                            placeholder_img.save(temp_img.name, format='JPEG', quality=75)
+                                            reportlab_img = ReportLabImage(temp_img.name, width=400, height=300)
+                                            pdf_width, pdf_height = 400, 300
+                                            
+                                            # Clean up temp file
+                                            try:
+                                                os.unlink(temp_img.name)
+                                            except:
+                                                pass
+                                    else:
+                                        # If PIL not available, create text placeholder
+                                        elements.append(Paragraph(f"<b>HTML File:</b> {filename}", normal_style))
+                                        elements.append(Paragraph("(HTML preview not available - PIL/Pillow required)", caption_style))
+                                        elements.append(Spacer(1, 10))
+                                        continue
                             else:
-                                reportlab_img = ReportLabImage(str(img_abs), width=400, height=300)
-                                pdf_width, pdf_height = 400, 300
+                                # Regular image file processing
+                                # Process image with PIL for high quality
+                                if PIL_AVAILABLE:
+                                    with PILImage.open(str(file_abs)) as pil_img:
+                                        # Get original dimensions
+                                        original_width, original_height = pil_img.size
+                                        
+                                        # Calculate maximum dimensions for PDF (reduced for smaller file size)
+                                        max_width, max_height = 400, 300
+                                        
+                                        # Calculate scaling factor to maintain aspect ratio
+                                        width_ratio = max_width / original_width
+                                        height_ratio = max_height / original_height
+                                        scale_ratio = min(width_ratio, height_ratio)
+                                        
+                                        # Calculate final dimensions for PDF
+                                        pdf_width = original_width * scale_ratio
+                                        pdf_height = original_height * scale_ratio
+                                        
+                                        # Convert to RGB if necessary
+                                        if pil_img.mode in ('RGBA', 'LA', 'P'):
+                                            rgb_img = PILImage.new('RGB', pil_img.size, (255, 255, 255))
+                                            if pil_img.mode == 'P':
+                                                pil_img = pil_img.convert('RGBA')
+                                            rgb_img.paste(pil_img, mask=pil_img.split()[-1] if pil_img.mode in ('RGBA', 'LA') else None)
+                                            pil_img = rgb_img
+                                        
+                                        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_img:
+                                            pil_img.save(temp_img.name, format='JPEG', quality=75, optimize=True, dpi=(150, 150))
+                                            reportlab_img = ReportLabImage(temp_img.name, width=pdf_width, height=pdf_height)
+                                            
+                                            # Clean up temp file
+                                            try:
+                                                os.unlink(temp_img.name)
+                                            except:
+                                                pass
+                                else:
+                                    reportlab_img = ReportLabImage(str(file_abs), width=400, height=300)
+                                    pdf_width, pdf_height = 400, 300
                             
                             # Create image with caption
+                            file_type_label = "HTML File" if file_extension in ['html', 'htm'] else "Screenshot"
                             img_with_caption = [
                                 [reportlab_img],
-                                [Paragraph(f"<b>{img_filename}</b>", caption_style)]
+                                [Paragraph(f"<b>{file_type_label}:</b> {filename}", caption_style)]
                             ]
                             
                             img_table = Table(img_with_caption, colWidths=[pdf_width])
@@ -1905,11 +2004,12 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
                             elements.append(Spacer(1, 15))
                             
                         except Exception as e:
-                            print(f"Error processing screenshot {img_path}: {e}")
+                            print(f"Error processing evidence file {file_path}: {e}")
                             # Create error info table
+                            file_type = "HTML File" if file_extension in ['html', 'htm'] else "Screenshot"
                             error_info = [
-                                [f"Screenshot #{idx}", f"Status: Error"],
-                                [f"File: {img_filename}", f"Error: {str(e)[:50]}..."]
+                                [f"{file_type} #{idx}", f"Status: Error"],
+                                [f"File: {filename}", f"Error: {str(e)[:50]}..."]
                             ]
                             
                             error_table = Table(error_info, colWidths=[200, 200])
@@ -1931,9 +2031,10 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
                             elements.append(Spacer(1, 10))
                     else:
                         # Create missing file info table
+                        file_type = "HTML File" if file_extension in ['html', 'htm'] else "Screenshot"
                         missing_info = [
-                            [f"Screenshot #{idx}", f"Status: Missing"],
-                            [f"File: {img_filename}", f"Path: {img_path}"]
+                            [f"{file_type} #{idx}", f"Status: Missing"],
+                            [f"File: {filename}", f"Path: {file_path}"]
                         ]
                         
                         missing_table = Table(missing_info, colWidths=[200, 200])
@@ -1954,12 +2055,12 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
                         elements.append(missing_table)
                         elements.append(Spacer(1, 10))
             else:
-                elements.append(Paragraph("No screenshots available for this test case.", normal_style))
+                elements.append(Paragraph("No evidence files available for this test case.", normal_style))
         else:
             elements.append(PageBreak())
-            elements.append(Paragraph("Test Evidence Screenshots", header_style))
+            elements.append(Paragraph("Test Evidence Files", header_style))
             elements.append(Spacer(1, 15))
-            elements.append(Paragraph("No screenshots available for this test case.", normal_style))
+            elements.append(Paragraph("No evidence files available for this test case.", normal_style))
 
         # Footer
         footer_style = styles['Normal'].clone('FooterStyle')
@@ -2133,49 +2234,100 @@ def generate_optimized_test_case_pdf(test_case_id, feature_name, run_timestamp, 
             elements.append(Paragraph(f"<b>Error Description:</b><br/>{safe_error}", error_style))
             elements.append(Spacer(1, 20))
 
-        # Limited screenshots (max 5)
-        screenshots = []
+        # Limited evidence files (max 5)
+        evidence_files = []
         if feature_data.get('test_evidence'):
             if test_case_id in feature_data['test_evidence']:
-                screenshots = feature_data['test_evidence'][test_case_id][:5]  # Limit to 5 screenshots
+                evidence_files = feature_data['test_evidence'][test_case_id][:5]  # Limit to 5 files
 
-        if screenshots:
-            elements.append(Paragraph("<b>Screenshots (Limited to 5):</b>", normal_style))
+        if evidence_files:
+            elements.append(Paragraph("<b>Evidence Files (Limited to 5):</b>", normal_style))
             elements.append(Spacer(1, 10))
             
-            for idx, img_path in enumerate(screenshots, 1):
-                img_abs = PROJECT_ROOT / img_path
-                if img_abs.exists():
+            for idx, file_path in enumerate(evidence_files, 1):
+                file_abs = PROJECT_ROOT / file_path
+                if file_abs.exists():
                     try:
-                        # Smaller images for optimization
-                        if PIL_AVAILABLE:
-                            with PILImage.open(str(img_abs)) as pil_img:
-                                # Smaller size for optimized PDF
-                                max_width, max_height = 300, 200
-                                original_width, original_height = pil_img.size
-                                
-                                width_ratio = max_width / original_width
-                                height_ratio = max_height / original_height
-                                scale_ratio = min(width_ratio, height_ratio)
-                                
-                                pdf_width = original_width * scale_ratio
-                                pdf_height = original_height * scale_ratio
-                                
-                                if pil_img.mode in ('RGBA', 'LA', 'P'):
-                                    rgb_img = PILImage.new('RGB', pil_img.size, (255, 255, 255))
-                                    if pil_img.mode == 'P':
-                                        pil_img = pil_img.convert('RGBA')
-                                    rgb_img.paste(pil_img, mask=pil_img.split()[-1] if pil_img.mode in ('RGBA', 'LA') else None)
-                                    pil_img = rgb_img
-                                
-                                with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_img:
-                                    pil_img.save(temp_img.name, 'JPEG', quality=70, optimize=True)  # Lower quality
-                                    reportlab_img = ReportLabImage(temp_img.name, width=pdf_width, height=pdf_height)
-                        else:
-                            reportlab_img = ReportLabImage(str(img_abs), width=300, height=200)
+                        file_extension = file_path.lower().split('.')[-1] if '.' in file_path else ''
                         
-                        img_filename = img_path.split('/')[-1]
-                        img_table = Table([[reportlab_img], [Paragraph(f"<b>{img_filename}</b>", normal_style)]], colWidths=[300])
+                        # Check if this is an HTML file
+                        if file_extension in ['html', 'htm']:
+                            # Convert HTML to image for PDF display with full page capture
+                            print(f"[DEBUG] Converting HTML to image for optimized PDF: {file_path}")
+                            reportlab_img = create_html_preview_image(file_abs, max_width=300, max_height=200, full_page=True)
+                            
+                            if reportlab_img:
+                                pdf_width = reportlab_img.imageWidth
+                                pdf_height = reportlab_img.imageHeight
+                            else:
+                                # Fallback: create placeholder for HTML
+                                if PIL_AVAILABLE:
+                                    placeholder_img = PILImage.new("RGB", (300, 200), color=(245, 247, 250))
+                                    draw = ImageDraw.Draw(placeholder_img)
+                                    try:
+                                        font = ImageFont.load_default()
+                                    except Exception:
+                                        font = None
+                                    
+                                    # Draw placeholder text
+                                    draw.text((15, 100), "HTML Preview", fill=(64, 64, 64), font=font)
+                                    draw.text((15, 120), file_path.split('/')[-1][:30], fill=(96, 96, 96), font=font)
+                                    
+                                    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_img:
+                                        placeholder_img.save(temp_img.name, format='JPEG', quality=70)
+                                        reportlab_img = ReportLabImage(temp_img.name, width=300, height=200)
+                                        pdf_width, pdf_height = 300, 200
+                                        
+                                        # Clean up temp file
+                                        try:
+                                            os.unlink(temp_img.name)
+                                        except:
+                                            pass
+                                else:
+                                    # If PIL not available, create text placeholder
+                                    elements.append(Paragraph(f"<b>HTML File:</b> {file_path.split('/')[-1]}", normal_style))
+                                    elements.append(Paragraph("(HTML preview not available)", caption_style))
+                                    elements.append(Spacer(1, 10))
+                                    continue
+                        else:
+                            # Regular image file processing
+                            # Smaller images for optimization
+                            if PIL_AVAILABLE:
+                                with PILImage.open(str(file_abs)) as pil_img:
+                                    # Smaller size for optimized PDF
+                                    max_width, max_height = 300, 200
+                                    original_width, original_height = pil_img.size
+                                    
+                                    width_ratio = max_width / original_width
+                                    height_ratio = max_height / original_height
+                                    scale_ratio = min(width_ratio, height_ratio)
+                                    
+                                    pdf_width = original_width * scale_ratio
+                                    pdf_height = original_height * scale_ratio
+                                    
+                                    if pil_img.mode in ('RGBA', 'LA', 'P'):
+                                        rgb_img = PILImage.new('RGB', pil_img.size, (255, 255, 255))
+                                        if pil_img.mode == 'P':
+                                            pil_img = pil_img.convert('RGBA')
+                                        rgb_img.paste(pil_img, mask=pil_img.split()[-1] if pil_img.mode in ('RGBA', 'LA') else None)
+                                        pil_img = rgb_img
+                                    
+                                    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_img:
+                                        pil_img.save(temp_img.name, 'JPEG', quality=70, optimize=True)  # Lower quality
+                                        reportlab_img = ReportLabImage(temp_img.name, width=pdf_width, height=pdf_height)
+                                        
+                                        # Clean up temp file
+                                        try:
+                                            os.unlink(temp_img.name)
+                                        except:
+                                            pass
+                            else:
+                                reportlab_img = ReportLabImage(str(file_abs), width=300, height=200)
+                                pdf_width, pdf_height = 300, 200
+                        
+                        filename = file_path.split('/')[-1]
+                        file_type_label = "HTML File" if file_extension in ['html', 'htm'] else "Screenshot"
+                        img_table = Table([[reportlab_img], [Paragraph(f"<b>{file_type_label}:</b> {filename}", normal_style)]], colWidths=[300])
                         img_table.setStyle(TableStyle([
                             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
@@ -2183,19 +2335,12 @@ def generate_optimized_test_case_pdf(test_case_id, feature_name, run_timestamp, 
                         
                         elements.append(img_table)
                         elements.append(Spacer(1, 15))
-                        
-                        # Clean up temp file
-                        if PIL_AVAILABLE:
-                            try:
-                                os.unlink(temp_img.name)
-                            except:
-                                pass
                                 
                     except Exception as e:
-                        print(f"[ERROR] Failed to add screenshot {img_path}: {e}")
+                        print(f"[ERROR] Failed to add evidence file {file_path}: {e}")
                         continue
         else:
-            elements.append(Paragraph("No screenshots available.", normal_style))
+            elements.append(Paragraph("No evidence files available.", normal_style))
 
         # Footer
         elements.append(Spacer(1, 30))
@@ -2746,6 +2891,158 @@ def open_browser():
     """Function to open the browser to the dashboard URL."""
     print(">>> [DEBUG] Attempting to open web browser...")
     webbrowser.open_new("http://127.0.0.1:5000")
+
+# --- HTML to Image Conversion for PDF ---
+def html_to_image_for_pdf(html_abs_path: Path, width: int = 800, height: int = 600, full_page: bool = True):
+    """Convert HTML file to image for PDF display using Playwright.
+    Returns a PIL Image object that can be used in ReportLab PDF.
+    
+    Args:
+        html_abs_path: Path to HTML file
+        width: Viewport width
+        height: Viewport height  
+        full_page: Whether to capture full page (True) or just viewport (False)
+    """
+    try:
+        if PLAYWRIGHT_AVAILABLE:
+            with sync_playwright() as p:
+                browser = p.chromium.launch()
+                
+                # Use larger viewport for better content rendering
+                viewport_width = max(width, 1200)  # Minimum 1200px width
+                viewport_height = max(height, 800)  # Minimum 800px height
+                
+                page = browser.new_page(viewport={"width": viewport_width, "height": viewport_height})
+                page.goto(html_abs_path.as_uri(), wait_until="load")
+                
+                # Wait for initial content to load
+                page.wait_for_timeout(1000)
+                
+                # Wait for any charts or dynamic content to render
+                try:
+                    # Wait for common chart elements to be visible
+                    page.wait_for_selector('canvas, svg, .chart, .pie-chart, .status-badge', timeout=5000)
+                except:
+                    # If no charts found, continue anyway
+                    pass
+                
+                # Additional wait for any animations or dynamic content
+                page.wait_for_timeout(2000)
+                
+                # Get actual page dimensions for full page capture
+                if full_page:
+                    # Get the actual content dimensions
+                    page_width = page.evaluate("() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth)")
+                    page_height = page.evaluate("() => Math.max(document.documentElement.scrollHeight, document.body.scrollHeight)")
+                    
+                    print(f"[DEBUG] Page dimensions: {page_width}x{page_height} pixels")
+                    
+                    # Ensure minimum dimensions
+                    page_width = max(page_width, viewport_width)
+                    page_height = max(page_height, viewport_height)
+                    
+                    # Update viewport to match content
+                    page.set_viewport_size({"width": page_width, "height": page_height})
+                    
+                    # Wait a bit more for layout to settle
+                    page.wait_for_timeout(1000)
+                
+                # Take screenshot with full page option
+                screenshot_bytes = page.screenshot(full_page=full_page, type='png')
+                browser.close()
+                
+                # Convert to PIL Image
+                if PIL_AVAILABLE:
+                    from io import BytesIO
+                    img = PILImage.open(BytesIO(screenshot_bytes))
+                    print(f"[DEBUG] Screenshot captured: {img.size[0]}x{img.size[1]} pixels")
+                    return img
+                else:
+                    # If PIL not available, return None
+                    return None
+                    
+    except Exception as e:
+        print(f"[WARN] Playwright HTML to image conversion failed for {html_abs_path}: {e}")
+        return None
+
+def create_html_preview_image(html_abs_path: Path, max_width: int = 500, max_height: int = 400, full_page: bool = True):
+    """Create a preview image from HTML file for PDF display.
+    Returns a ReportLab Image object ready for PDF insertion.
+    
+    Args:
+        html_abs_path: Path to HTML file
+        max_width: Maximum width for PDF display
+        max_height: Maximum height for PDF display
+        full_page: Whether to capture full page (True) or just viewport (False)
+    """
+    try:
+        # Convert HTML to PIL Image with full page capture
+        pil_img = html_to_image_for_pdf(html_abs_path, max_width, max_height, full_page=full_page)
+        
+        if pil_img is None:
+            # Fallback: create a placeholder image
+            if PIL_AVAILABLE:
+                pil_img = PILImage.new("RGB", (max_width, max_height), color=(245, 247, 250))
+                draw = ImageDraw.Draw(pil_img)
+                try:
+                    font = ImageFont.load_default()
+                except Exception:
+                    font = None
+                
+                # Draw placeholder text
+                text = "HTML Preview"
+                filename = html_abs_path.name
+                draw.text((20, max_height // 2 - 20), text, fill=(64, 64, 64), font=font)
+                draw.text((20, max_height // 2 + 10), filename[:50], fill=(96, 96, 96), font=font)
+            else:
+                return None
+        
+        # Get original dimensions
+        original_width, original_height = pil_img.size
+        print(f"[DEBUG] HTML image captured: {original_width}x{original_height} pixels")
+        
+        # Calculate scaling to fit PDF dimensions while maintaining aspect ratio
+        width_ratio = max_width / original_width
+        height_ratio = max_height / original_height
+        scale_ratio = min(width_ratio, height_ratio)
+        
+        # Ensure we don't scale up (only scale down if needed)
+        if scale_ratio > 1:
+            scale_ratio = 1
+        
+        new_width = int(original_width * scale_ratio)
+        new_height = int(original_height * scale_ratio)
+        
+        print(f"[DEBUG] Scaled to PDF dimensions: {new_width}x{new_height} points")
+        
+        # Resize image if scaling is needed
+        if scale_ratio != 1:
+            pil_img = pil_img.resize((new_width, new_height), PILImage.Resampling.LANCZOS)
+        
+        # Convert to RGB if necessary
+        if pil_img.mode in ('RGBA', 'LA', 'P'):
+            rgb_img = PILImage.new('RGB', pil_img.size, (255, 255, 255))
+            if pil_img.mode == 'P':
+                pil_img = pil_img.convert('RGBA')
+            rgb_img.paste(pil_img, mask=pil_img.split()[-1] if pil_img.mode in ('RGBA', 'LA') else None)
+            pil_img = rgb_img
+        
+        # Save to temporary file and create ReportLab Image
+        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_img:
+            pil_img.save(temp_img.name, format='JPEG', quality=90, optimize=True, dpi=(150, 150))
+            reportlab_img = ReportLabImage(temp_img.name, width=new_width, height=new_height)
+            
+            # Clean up temp file after ReportLab loads it
+            try:
+                os.unlink(temp_img.name)
+            except:
+                pass
+                
+            return reportlab_img
+            
+    except Exception as e:
+        print(f"[ERROR] Failed to create HTML preview image for {html_abs_path}: {e}")
+        return None
 
 if __name__ == "__main__":
     print("🚀 Starting Test Dashboard Server...")
