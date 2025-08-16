@@ -92,53 +92,171 @@ def _try_register_font(font_name: str, ttf_path: Path) -> bool:
     return False
 
 def ensure_thai_fonts():
-    """Enable Thai in PDFs without manual font install when possible.
-    1) Try Unicode CID fonts (built-in). 2) Fallback to local/system Thai TTFs if present.
-    """
+    """Enable Thai fonts with better debugging and fallback."""
     global PDF_FONT_NORMAL, PDF_FONT_BOLD
+    
     if not REPORTLAB_AVAILABLE:
-        return
+        print("[ERROR] ReportLab not available!")
+        return False
+    
+    # Check if fonts are already loaded and different from Helvetica
+    if (PDF_FONT_NORMAL != 'Helvetica' and PDF_FONT_BOLD != 'Helvetica-Bold' and
+        PDF_FONT_NORMAL != 'Helvetica-Bold' and PDF_FONT_BOLD != 'Helvetica'):
+        print(f"✅ Thai fonts already loaded: {PDF_FONT_NORMAL}, {PDF_FONT_BOLD}")
+        return True
+    
+    # Check if fonts are already registered in ReportLab
     try:
-        # Step 1: Unicode CID fonts
-        if setup_unicode_cid_fonts():
-            return
-
-        # Candidate font pairs (normal, bold, internal names)
-        candidates = [
-            ("THSarabunNew", "THSarabunNew.ttf", "THSarabunNew-Bold", "THSarabunNew Bold.ttf"),
-            ("NotoSansThai", "NotoSansThai-Regular.ttf", "NotoSansThai-Bold", "NotoSansThai-Bold.ttf"),
-            ("NotoSerifThai", "NotoSerifThai-Regular.ttf", "NotoSerifThai-Bold", "NotoSerifThai-Bold.ttf"),
-        ]
-        search_dirs = [
-            SERVER_DIR / 'fonts',
-            PROJECT_ROOT / 'fonts',
-            Path('C:/Windows/Fonts'),
-            Path('/usr/share/fonts'),
-            Path('/usr/local/share/fonts'),
-        ]
-        for family_name, normal_file, bold_name, bold_file in candidates:
-            normal_path = None
-            bold_path = None
-            for d in search_dirs:
-                if not normal_path:
-                    p = d / normal_file
-                    if p.exists():
-                        normal_path = p
-                if not bold_path:
-                    p = d / bold_file
-                    if p.exists():
-                        bold_path = p
-            if normal_path and bold_path:
-                norm_reg_name = f"{family_name}-Regular"
-                bold_reg_name = f"{family_name}-Bold"
-                if _try_register_font(norm_reg_name, normal_path) and _try_register_font(bold_reg_name, bold_path):
-                    PDF_FONT_NORMAL = norm_reg_name
-                    PDF_FONT_BOLD = bold_reg_name
-                    print(f"[INFO] Using Thai font: {normal_path.name}, {bold_path.name}")
-                    return
-        print("[WARN] No Thai font found. PDF will use Helvetica (may show squares for Thai). Place THSarabunNew or NotoSansThai in Resources/Dashboard_Report/fonts.")
+        from reportlab.pdfbase import pdfmetrics
+        registered_fonts = list(pdfmetrics.getRegisteredFontNames())
+        
+        # Look for Thai fonts in registered fonts
+        thai_fonts = [f for f in registered_fonts if any(name in f for name in ['Sarabun', 'THSarabun', 'NotoSansThai', 'Kanit'])]
+        
+        if len(thai_fonts) >= 2:
+            # Find normal and bold fonts
+            normal_font = None
+            bold_font = None
+            
+            for font in thai_fonts:
+                if 'Bold' in font:
+                    bold_font = font
+                elif 'Regular' in font or (not 'Bold' in font and not 'Italic' in font):
+                    normal_font = font
+            
+            if normal_font and bold_font:
+                PDF_FONT_NORMAL = normal_font
+                PDF_FONT_BOLD = bold_font
+                print(f"✅ Found already registered Thai fonts: {PDF_FONT_NORMAL}, {PDF_FONT_BOLD}")
+                return True
     except Exception as e:
-        print(f"[WARN] Font initialization failed: {e}")
+        print(f"⚠️ Could not check registered fonts: {e}")
+    
+    print("\n" + "="*60)
+    print("🔍 THAI FONT INITIALIZATION")
+    print("="*60)
+    
+    # Create fonts directory if not exists
+    fonts_dir = SERVER_DIR / 'fonts'
+    fonts_dir.mkdir(exist_ok=True)
+    print(f"📁 Fonts directory: {fonts_dir}")
+    
+    # Font candidates with multiple naming patterns
+    font_candidates = [
+        # (family_name, normal_files, bold_files)
+        ("Sarabun", 
+         ["Sarabun-Regular.ttf", "Sarabun.ttf"],
+         ["Sarabun-Bold.ttf", "Sarabun Bold.ttf"]),
+        
+        ("THSarabunNew",
+         ["THSarabunNew.ttf", "thsarabunnew.ttf", "THSarabun.ttf"],
+         ["THSarabunNew Bold.ttf", "THSarabunNew-Bold.ttf", "thsarabunnewbold.ttf", "THSarabun Bold.ttf"]),
+        
+        ("NotoSansThai",
+         ["NotoSansThai-Regular.ttf", "NotoSansThai.ttf"],
+         ["NotoSansThai-Bold.ttf", "NotoSansThia Bold.ttf"]),
+        
+        ("Kanit",
+         ["Kanit-Regular.ttf", "Kanit.ttf"],
+         ["Kanit-Bold.ttf", "Kanit-SemiBold.ttf"]),
+    ]
+    
+    # Search directories
+    search_dirs = [
+        fonts_dir,  # Local fonts folder
+        SERVER_DIR / 'fonts',
+        PROJECT_ROOT / 'fonts',
+        Path('C:/Windows/Fonts'),  # Windows system fonts
+        Path('/usr/share/fonts'),  # Linux
+        Path('/System/Library/Fonts'),  # macOS
+        Path.home() / '.fonts',  # User fonts
+    ]
+    
+    # Try each font candidate
+    for family_name, normal_candidates, bold_candidates in font_candidates:
+        print(f"\n🔎 Searching for {family_name}...")
+        
+        normal_path = None
+        bold_path = None
+        
+        # Find normal font
+        for dir_path in search_dirs:
+            if not dir_path.exists():
+                continue
+            for normal_file in normal_candidates:
+                test_path = dir_path / normal_file
+                if test_path.exists():
+                    normal_path = test_path
+                    print(f"  ✓ Found normal: {normal_path}")
+                    break
+            if normal_path:
+                break
+        
+        # Find bold font
+        for dir_path in search_dirs:
+            if not dir_path.exists():
+                continue
+            for bold_file in bold_candidates:
+                test_path = dir_path / bold_file
+                if test_path.exists():
+                    bold_path = test_path
+                    print(f"  ✓ Found bold: {bold_path}")
+                    break
+            if bold_path:
+                break
+        
+        # If we have both fonts, register them
+        if normal_path and bold_path:
+            try:
+                # Register fonts
+                from reportlab.pdfbase import pdfmetrics
+                from reportlab.pdfbase.ttfonts import TTFont
+                
+                normal_name = f"{family_name}-Regular"
+                bold_name = f"{family_name}-Bold"
+                
+                pdfmetrics.registerFont(TTFont(normal_name, str(normal_path)))
+                pdfmetrics.registerFont(TTFont(bold_name, str(bold_path)))
+                
+                # Set global font variables
+                PDF_FONT_NORMAL = normal_name
+                PDF_FONT_BOLD = bold_name
+                
+                print(f"\n✅ SUCCESS! Thai fonts registered:")
+                print(f"   Normal: {PDF_FONT_NORMAL}")
+                print(f"   Bold: {PDF_FONT_BOLD}")
+                print("="*60 + "\n")
+                
+                return True
+                
+            except Exception as e:
+                print(f"  ❌ Registration failed: {e}")
+                continue
+        else:
+            if normal_path and not bold_path:
+                print(f"  ⚠️ Found normal but missing bold font")
+            elif bold_path and not normal_path:
+                print(f"  ⚠️ Found bold but missing normal font")
+    
+    # If no Thai fonts found, provide help
+    print("\n" + "="*60)
+    print("❌ NO THAI FONTS FOUND!")
+    print("="*60)
+    print("\n📥 HOW TO FIX:")
+    print(f"1. Download Sarabun font from Google Fonts:")
+    print(f"   https://fonts.google.com/specimen/Sarabun")
+    print(f"\n2. Extract and copy these files to:")
+    print(f"   {fonts_dir}")
+    print(f"   - Sarabun-Regular.ttf")
+    print(f"   - Sarabun-Bold.ttf")
+    print(f"\n3. Restart the server")
+    print("="*60 + "\n")
+    
+    # Fallback to Helvetica (won't show Thai)
+    PDF_FONT_NORMAL = 'Helvetica'
+    PDF_FONT_BOLD = 'Helvetica-Bold'
+    
+    return False
 
 def escape_html_for_pdf(text):
     """
@@ -1134,7 +1252,7 @@ def export_pdf():
                 ('ALIGN', (0,0), (-1,0), 'CENTER'),
                 
                 # Data rows styling with smaller font size
-                ('FONTNAME', (0,1), (-1,-1), 'Helvetica'),
+                ('FONTNAME', (0,1), (-1,-1), PDF_FONT_NORMAL),
                 ('FONTSIZE', (0,1), (-1,-1), 8),  # Reduced font size
                 ('ALIGN', (0,1), (-1,-1), 'LEFT'),
                 ('VALIGN', (0,0), (-1,-1), 'TOP'),
@@ -1236,7 +1354,7 @@ def export_pdf():
                                 test_case_style.fontSize = 12
                                 test_case_style.spaceAfter = 10
                                 test_case_style.textColor = colors.HexColor("#B8860B")
-                                test_case_style.fontName = 'Helvetica-Bold'
+                                test_case_style.fontName = PDF_FONT_BOLD
                                 test_case_style.leftIndent = 5
                                 test_case_style.borderWidth = 1
                                 test_case_style.borderColor = colors.HexColor("#D4AF37")
@@ -1387,7 +1505,7 @@ def export_pdf():
         footer_style = styles['Normal'].clone('FooterStyle')
         footer_style.fontSize = 8  # Footer information: 8pt Regular as requested
         footer_style.textColor = colors.HexColor("#666666")
-        footer_style.fontName = 'Helvetica'  # Will be Arial when supported
+        footer_style.fontName = PDF_FONT_NORMAL  # Use Thai font
         footer_style.leading = 10  # 1.25x line spacing (8pt * 1.25 = 10pt)
         footer_style.alignment = 1  # Center alignment
         
@@ -1520,25 +1638,25 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
         title_style.fontSize = 16
         title_style.spaceAfter = 20
         title_style.textColor = colors.HexColor("#8B4513")
-        title_style.fontName = 'Helvetica-Bold'
+        title_style.fontName = PDF_FONT_BOLD
         title_style.alignment = 1
         
         header_style = styles['Heading1'].clone('TestCaseHeaderStyle')
         header_style.fontSize = 14
         header_style.spaceAfter = 15
         header_style.textColor = colors.HexColor("#8B4513")
-        header_style.fontName = 'Helvetica-Bold'
+        header_style.fontName = PDF_FONT_BOLD
         
         normal_style = styles['Normal'].clone('TestCaseNormalStyle')
         normal_style.fontSize = 10
         normal_style.textColor = colors.HexColor("#2F4F4F")
-        normal_style.fontName = 'Helvetica'
+        normal_style.fontName = PDF_FONT_NORMAL
         normal_style.leading = 12
 
         caption_style = styles['Normal'].clone('TestCaseCaptionStyle')
         caption_style.fontSize = 9
         caption_style.textColor = colors.HexColor("#666666")
-        caption_style.fontName = 'Helvetica'
+        caption_style.fontName = PDF_FONT_NORMAL
         caption_style.leading = 11
         caption_style.alignment = 1
 
@@ -1562,7 +1680,7 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
             
         status_style = styles['Normal'].clone('StatusStyle')
         status_style.fontSize = 16
-        status_style.fontName = 'Helvetica-Bold'
+        status_style.fontName = PDF_FONT_BOLD
         status_style.textColor = status_color
         status_style.alignment = 1
         status_style.borderWidth = 2
@@ -1605,14 +1723,14 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
         label_style = styles['Normal'].clone('MetaLabelStyle')
         label_style.fontSize = 9
         label_style.textColor = colors.HexColor("#8B4513")
-        label_style.fontName = 'Helvetica-Bold'
+        label_style.fontName = PDF_FONT_BOLD
         label_style.leading = 11
         label_style.wordWrap = 'CJK'
 
         value_style = styles['Normal'].clone('MetaValueStyle')
         value_style.fontSize = 9
         value_style.textColor = colors.HexColor("#2F4F4F")
-        value_style.fontName = 'Helvetica'
+        value_style.fontName = PDF_FONT_NORMAL
         value_style.leading = 11
         value_style.wordWrap = 'CJK'
 
@@ -1642,8 +1760,8 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
 
         metadata_table = Table(metadata_rows, colWidths=[label_col_width, value_col_width])
         metadata_table.setStyle(TableStyle([
-            ('FONTNAME', (0,0), (0,-1), 'Helvetica-Bold'),
-            ('FONTNAME', (1,0), (1,-1), 'Helvetica'),
+            ('FONTNAME', (0,0), (0,-1), PDF_FONT_BOLD),
+            ('FONTNAME', (1,0), (1,-1), PDF_FONT_NORMAL),
             ('FONTSIZE', (0,0), (-1,-1), 9),
             ('ALIGN', (0,0), (0,-1), 'RIGHT'),
             ('ALIGN', (1,0), (1,-1), 'LEFT'),
@@ -1699,7 +1817,7 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
                     fallback_style = styles['Normal'].clone('FallbackErrorStyle')
                     fallback_style.fontSize = 9
                     fallback_style.textColor = colors.HexColor("#dc3545")
-                    fallback_style.fontName = 'Helvetica'
+                    fallback_style.fontName = PDF_FONT_NORMAL
                     fallback_style.leading = 11
                     fallback_style.wordWrap = 'CJK'
                     
@@ -1822,7 +1940,7 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
                             
                             error_table = Table(error_info, colWidths=[200, 200])
                             error_table.setStyle(TableStyle([
-                                ('FONTNAME', (0,0), (-1,-1), 'Helvetica'),
+                                ('FONTNAME', (0,0), (-1,-1), PDF_FONT_NORMAL),
                                 ('FONTSIZE', (0,0), (-1,-1), 8),
                                 ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                                 ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
@@ -1846,7 +1964,7 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
                         
                         missing_table = Table(missing_info, colWidths=[200, 200])
                         missing_table.setStyle(TableStyle([
-                            ('FONTNAME', (0,0), (-1,-1), 'Helvetica'),
+                            ('FONTNAME', (0,0), (-1,-1), PDF_FONT_NORMAL),
                             ('FONTSIZE', (0,0), (-1,-1), 8),
                             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
                             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
@@ -1873,7 +1991,7 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
         footer_style = styles['Normal'].clone('FooterStyle')
         footer_style.fontSize = 8
         footer_style.textColor = colors.HexColor("#666666")
-        footer_style.fontName = 'Helvetica'
+        footer_style.fontName = PDF_FONT_NORMAL
         footer_style.leading = 10
         footer_style.alignment = 1
         
@@ -1984,7 +2102,7 @@ def generate_optimized_test_case_pdf(test_case_id, feature_name, run_timestamp, 
         title_style.fontSize = 16
         title_style.spaceAfter = 20
         title_style.textColor = colors.HexColor("#8B4513")
-        title_style.fontName = 'Helvetica-Bold'
+        title_style.fontName = PDF_FONT_BOLD
         title_style.alignment = 1
         
         elements.append(Paragraph(f"Test Case: {escape_html_for_pdf(test_case_id)}", title_style))
@@ -1993,7 +2111,7 @@ def generate_optimized_test_case_pdf(test_case_id, feature_name, run_timestamp, 
         # Status
         status_style = styles['Normal'].clone('OptimizedStatusStyle')
         status_style.fontSize = 14
-        status_style.fontName = 'Helvetica-Bold'
+        status_style.fontName = PDF_FONT_BOLD
         status_style.alignment = 1
         
         if test_case_status == "PASS":
@@ -2029,7 +2147,7 @@ def generate_optimized_test_case_pdf(test_case_id, feature_name, run_timestamp, 
             error_style = styles['Normal'].clone('OptimizedErrorStyle')
             error_style.fontSize = 10
             error_style.textColor = colors.HexColor("#dc3545")
-            error_style.fontName = 'Helvetica'
+            error_style.fontName = PDF_FONT_NORMAL
             error_style.leading = 12
             
             # Limit error message to 2000 characters
