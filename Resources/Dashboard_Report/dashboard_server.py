@@ -92,134 +92,77 @@ def _try_register_font(font_name: str, ttf_path: Path) -> bool:
     return False
 
 def ensure_thai_fonts():
-    """Enable Thai in PDFs with proper font registration."""
+    """Enable Thai in PDFs without manual font install when possible.
+    1) Try Unicode CID fonts (built-in). 2) Fallback to local/system Thai TTFs if present.
+    """
     global PDF_FONT_NORMAL, PDF_FONT_BOLD
     if not REPORTLAB_AVAILABLE:
         return
-    
     try:
-        # Step 1: Try Unicode CID fonts first (built-in)
+        # Step 1: Unicode CID fonts
         if setup_unicode_cid_fonts():
-            print("[INFO] ✅ Using Unicode CID fonts for Thai support")
-            return True
+            return
 
-        # Step 2: Try local Thai fonts in fonts directory
-        fonts_dir = SERVER_DIR / 'fonts'
-        
-        # Create fonts directory if it doesn't exist
-        fonts_dir.mkdir(exist_ok=True)
-        
-        # Priority 1: THSarabunNew (most reliable for Thai)
-        thsarabun_normal = fonts_dir / 'THSarabunNew.ttf'
-        thsarabun_bold = fonts_dir / 'THSarabunNew Bold.ttf'
-        
-        if thsarabun_normal.exists() and thsarabun_bold.exists():
-            try:
-                pdfmetrics.registerFont(TTFont('THSarabunNew', str(thsarabun_normal)))
-                pdfmetrics.registerFont(TTFont('THSarabunNew-Bold', str(thsarabun_bold)))
-                
-                PDF_FONT_NORMAL = 'THSarabunNew'
-                PDF_FONT_BOLD = 'THSarabunNew-Bold'
-                
-                print(f"[INFO] ✅ Thai fonts loaded successfully: THSarabunNew")
-                print(f"[INFO] Font files: {thsarabun_normal.name}, {thsarabun_bold.name}")
-                return True
-            except Exception as e:
-                print(f"[WARN] Failed to register THSarabunNew fonts: {e}")
-        
-        # Priority 2: Noto Sans Thai
-        noto_normal = fonts_dir / 'NotoSansThai-Regular.ttf'
-        noto_bold = fonts_dir / 'NotoSansThai-Bold.ttf'
-        
-        if noto_normal.exists() and noto_bold.exists():
-            try:
-                pdfmetrics.registerFont(TTFont('NotoSansThai', str(noto_normal)))
-                pdfmetrics.registerFont(TTFont('NotoSansThai-Bold', str(noto_bold)))
-                
-                PDF_FONT_NORMAL = 'NotoSansThai'
-                PDF_FONT_BOLD = 'NotoSansThai-Bold'
-                
-                print(f"[INFO] ✅ Thai fonts loaded successfully: NotoSansThai")
-                print(f"[INFO] Font files: {noto_normal.name}, {noto_bold.name}")
-                return True
-            except Exception as e:
-                print(f"[WARN] Failed to register NotoSansThai fonts: {e}")
-        
-        # Priority 3: System fonts (Windows)
-        if os.name == 'nt':  # Windows
-            system_fonts = [
-                Path('C:/Windows/Fonts/THSarabunNew.ttf'),
-                Path('C:/Windows/Fonts/NotoSansThai-Regular.ttf'),
-            ]
-            
-            for font_path in system_fonts:
-                if font_path.exists():
-                    try:
-                        font_name = font_path.stem
-                        pdfmetrics.registerFont(TTFont(font_name, str(font_path)))
-                        
-                        if 'Bold' in font_name:
-                            PDF_FONT_BOLD = font_name
-                        else:
-                            PDF_FONT_NORMAL = font_name
-                        
-                        print(f"[INFO] ✅ System Thai font loaded: {font_name}")
-                    except Exception as e:
-                        print(f"[WARN] Failed to register system font {font_path}: {e}")
-        
-        # Check if we have at least one Thai font
-        if PDF_FONT_NORMAL != 'Helvetica' or PDF_FONT_BOLD != 'Helvetica-Bold':
-            print(f"[INFO] ✅ Thai fonts configured: {PDF_FONT_NORMAL}, {PDF_FONT_BOLD}")
-            return True
-        
-        # Fallback: No Thai fonts found
-        print(f"[WARNING] ⚠️ No Thai fonts found!")
-        print(f"[INFO] Please download and place Thai fonts in: {fonts_dir}")
-        print(f"[INFO] Recommended fonts:")
-        print(f"[INFO] - THSarabunNew.ttf and THSarabunNew Bold.ttf")
-        print(f"[INFO] - NotoSansThai-Regular.ttf and NotoSansThai-Bold.ttf")
-        print(f"[INFO] Download from:")
-        print(f"[INFO] - THSarabunNew: https://www.f0nt.com/release/th-sarabun-new/")
-        print(f"[INFO] - Noto Sans Thai: https://fonts.google.com/noto/specimen/Noto+Sans+Thai")
-        
-        # Use Helvetica but warn about Thai display issues
-        PDF_FONT_NORMAL = 'Helvetica'
-        PDF_FONT_BOLD = 'Helvetica-Bold'
-        return False
-        
+        # Candidate font pairs (normal, bold, internal names)
+        candidates = [
+            ("THSarabunNew", "THSarabunNew.ttf", "THSarabunNew-Bold", "THSarabunNew Bold.ttf"),
+            ("NotoSansThai", "NotoSansThai-Regular.ttf", "NotoSansThai-Bold", "NotoSansThai-Bold.ttf"),
+            ("NotoSerifThai", "NotoSerifThai-Regular.ttf", "NotoSerifThai-Bold", "NotoSerifThai-Bold.ttf"),
+        ]
+        search_dirs = [
+            SERVER_DIR / 'fonts',
+            PROJECT_ROOT / 'fonts',
+            Path('C:/Windows/Fonts'),
+            Path('/usr/share/fonts'),
+            Path('/usr/local/share/fonts'),
+        ]
+        for family_name, normal_file, bold_name, bold_file in candidates:
+            normal_path = None
+            bold_path = None
+            for d in search_dirs:
+                if not normal_path:
+                    p = d / normal_file
+                    if p.exists():
+                        normal_path = p
+                if not bold_path:
+                    p = d / bold_file
+                    if p.exists():
+                        bold_path = p
+            if normal_path and bold_path:
+                norm_reg_name = f"{family_name}-Regular"
+                bold_reg_name = f"{family_name}-Bold"
+                if _try_register_font(norm_reg_name, normal_path) and _try_register_font(bold_reg_name, bold_path):
+                    PDF_FONT_NORMAL = norm_reg_name
+                    PDF_FONT_BOLD = bold_reg_name
+                    print(f"[INFO] Using Thai font: {normal_path.name}, {bold_path.name}")
+                    return
+        print("[WARN] No Thai font found. PDF will use Helvetica (may show squares for Thai). Place THSarabunNew or NotoSansThai in Resources/Dashboard_Report/fonts.")
     except Exception as e:
-        print(f"[ERROR] Failed to setup Thai fonts: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        # Fallback to Helvetica
-        PDF_FONT_NORMAL = 'Helvetica'
-        PDF_FONT_BOLD = 'Helvetica-Bold'
-        return False
+        print(f"[WARN] Font initialization failed: {e}")
 
 def escape_html_for_pdf(text):
     """
     Safely escape HTML/XML characters for use in ReportLab Paragraphs.
-    Optimized for Thai text with proper Unicode handling.
+    Also handles very long text by adding soft breaks.
+    Specially optimized for Thai text and very long content (10,000+ characters).
     """
     if not text or text in ['nan', 'none', '', 'None']:
         return ''
     
-    # Convert to string and ensure proper encoding
+    # Convert to string and strip
     text = str(text).strip()
     
     # Log text statistics for debugging
     text_length = len(text)
     has_thai = any(ord(c) > 127 for c in text)
-    print(f"[DEBUG] Processing text for PDF: length={text_length}, has_thai={has_thai}")
+    print(f"[DEBUG] Processing text for PDF: length={text_length}, has_non_ascii={has_thai}")
     
     # For extremely long text (>10,000 chars), truncate with warning
     if text_length > 10000:
         print(f"[WARNING] Very long text detected ({text_length} chars), truncating to 10,000 characters")
         text = text[:10000] + "... [เนื้อหาถูกตัดทอนเนื่องจากมีความยาวมาก]"
     
-    # Escape HTML/XML characters but preserve Thai characters
-    # html.escape() handles Unicode properly, so Thai characters should be preserved
+    # Escape HTML/XML characters
     text = html.escape(text)
     
     # Handle very long lines by adding soft breaks
@@ -231,9 +174,9 @@ def escape_html_for_pdf(text):
     
     for line in lines:
         if len(line) > max_line_length:
+            # For Thai text, break more frequently as word boundaries are harder to detect
             if has_thai:
-                # For Thai text, break every 80 characters
-                # This is more appropriate for Thai which doesn't have clear word boundaries
+                # Break Thai text every 80 characters regardless of word boundaries
                 for i in range(0, len(line), max_line_length):
                     chunk = line[i:i + max_line_length]
                     processed_lines.append(chunk)
@@ -258,14 +201,6 @@ def escape_html_for_pdf(text):
             processed_lines.append(line)
     
     result = '<br/>'.join(processed_lines)
-    
-    # Verify Thai characters are preserved
-    if has_thai:
-        thai_chars_preserved = any(ord(c) > 127 for c in result)
-        print(f"[DEBUG] Thai characters preserved: {thai_chars_preserved}")
-        if not thai_chars_preserved:
-            print(f"[WARNING] Thai characters may have been lost during processing!")
-    
     print(f"[DEBUG] Text processing completed: original_length={text_length}, processed_length={len(result)}, lines={len(processed_lines)}")
     return result
 
@@ -1541,19 +1476,26 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
                         folder_name_for_title = folder_name
                         break
         
-        # Extract test case information with priority
-        # Priority 1: Use folder name from screenshot folder
-        # Priority 2: Use description from Excel
-        # Priority 3: Use test_case_id as fallback
+        # Extract test case information with correct separation
+        # 1. Title: Use folder name from screenshot folder (as requested)
+        # 2. Test Case Description: Use Excel data (separate field)
+        
+        # Get title from folder name (for header)
         if folder_name_for_title and folder_name_for_title != test_case_id:
-            # Extract description from folder name (remove test_case_id prefix if exists)
             if folder_name_for_title.startswith(test_case_id + '_'):
-                test_case_name = folder_name_for_title[len(test_case_id + '_'):]
+                title_name = folder_name_for_title[len(test_case_id + '_'):]  # Use "225522422" for title
             else:
-                test_case_name = folder_name_for_title
+                title_name = folder_name_for_title
         else:
-            # Fallback to Excel description
-            test_case_name = str(row_get(desc_col, test_case_id))
+            title_name = test_case_id  # fallback to ID if no folder
+        
+        # Get Test Case Description from Excel (separate field)
+        test_case_description = str(row_get(desc_col, test_case_id))
+        if not test_case_description or test_case_description.lower() in ['nan', 'none', '']:
+            test_case_description = test_case_id  # fallback to ID if no description
+        
+        # Use title_name for header, test_case_description for description field
+        test_case_name = title_name  # This will be used for the title
 
         status_raw = row_get(status_col, 'UNKNOWN')
         test_case_status = str(status_raw).strip().upper() if status_raw is not None else 'UNKNOWN'
@@ -1648,8 +1590,8 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
             ["Test Case ID:", test_case_id]
         ]
         
-        if test_case_name and test_case_name != test_case_id:
-            metadata_data.append(["Test Case Description:", test_case_name])
+        if test_case_description and test_case_description != test_case_id:
+            metadata_data.append(["Test Case Description:", test_case_description])
         
         if expected_result and expected_result.strip() and expected_result.lower() not in ['nan', 'none', '']:
             metadata_data.append(["Expected Result:", expected_result])
@@ -2731,16 +2673,7 @@ if __name__ == "__main__":
         print(f"💡 To install missing dependencies: pip install {' '.join(missing_deps)}")
     
     # Ensure Thai fonts are registered for ReportLab
-    print("🔤 Setting up Thai fonts for PDF generation...")
-    thai_fonts_loaded = ensure_thai_fonts()
-    
-    if thai_fonts_loaded:
-        print("✅ Thai fonts configured successfully!")
-        print(f"   Normal font: {PDF_FONT_NORMAL}")
-        print(f"   Bold font: {PDF_FONT_BOLD}")
-    else:
-        print("⚠️  Thai fonts not available - PDFs may show squares for Thai text")
-        print("   Please download Thai fonts and place them in Resources/Dashboard_Report/fonts/")
+    ensure_thai_fonts()
     
     Timer(3, open_browser).start()
     app.run(debug=True, port=5000, use_reloader=False) 
