@@ -74,187 +74,165 @@ def setup_unicode_cid_fonts() -> bool:
     try:
         pdfmetrics.registerFont(UnicodeCIDFont('HeiseiMin-W3'))
         pdfmetrics.registerFont(UnicodeCIDFont('HeiseiKakuGo-W5'))
-        PDF_FONT_NORMAL = 'HeiseiMin-W3'
-        PDF_FONT_BOLD = 'HeiseiKakuGo-W5'
-        print('[INFO] Using Unicode CID fonts: HeiseiMin-W3 / HeiseiKakuGo-W5')
+        
+        # IMPORTANT: Update global variables using globals() to ensure they persist
+        globals()['PDF_FONT_NORMAL'] = 'HeiseiMin-W3'
+        globals()['PDF_FONT_BOLD'] = 'HeiseiKakuGo-W5'
+        
+        print(f'[INFO] Using Unicode CID fonts: HeiseiMin-W3 / HeiseiKakuGo-W5')
+        print(f'[DEBUG] Global vars updated: Normal={globals()["PDF_FONT_NORMAL"]}, Bold={globals()["PDF_FONT_BOLD"]}')
+        
         return True
     except Exception as e:
         print(f'[WARN] Unicode CID fonts not available: {e}')
         return False
 
 def _try_register_font(font_name: str, ttf_path: Path) -> bool:
+    """Helper to register a font."""
     try:
         if ttf_path and ttf_path.exists():
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
+            
             pdfmetrics.registerFont(TTFont(font_name, str(ttf_path)))
+            print(f"[REGISTERED] Font '{font_name}' from {ttf_path}")
             return True
     except Exception as e:
         print(f"[WARN] Could not register font {ttf_path}: {e}")
     return False
 
-def ensure_thai_fonts():
-    """Enable Thai fonts with better debugging and fallback."""
-    global PDF_FONT_NORMAL, PDF_FONT_BOLD
+def verify_font_settings():
+    """Verify current font settings."""
+    print("\n" + "="*60)
+    print("FONT VERIFICATION")
+    print("="*60)
+    print(f"PDF_FONT_NORMAL = {PDF_FONT_NORMAL}")
+    print(f"PDF_FONT_BOLD = {PDF_FONT_BOLD}")
     
+    if REPORTLAB_AVAILABLE:
+        from reportlab.pdfbase import pdfmetrics
+        
+        # Check if fonts are registered
+        try:
+            # Try to get font info
+            normal_font = pdfmetrics.getFont(PDF_FONT_NORMAL)
+            bold_font = pdfmetrics.getFont(PDF_FONT_BOLD)
+            print(f"✅ Normal font registered: {normal_font}")
+            print(f"✅ Bold font registered: {bold_font}")
+        except Exception as e:
+            print(f"❌ Font not properly registered: {e}")
+    
+    # Check if Thai fonts
+    is_thai = not (PDF_FONT_NORMAL == 'Helvetica' or PDF_FONT_BOLD == 'Helvetica-Bold')
+    if is_thai:
+        print("✅ Thai fonts are active")
+    else:
+        print("❌ Still using default Helvetica (no Thai support)")
+    
+    print("="*60 + "\n")
+    return is_thai
+
+def ensure_thai_fonts():
+    """Ensure Thai fonts are available for PDF generation.
+
+    This function now attempts to register built-in Unicode CID fonts (HeiseiMin/HeiseiKakuGo) before
+    searching for external TTF files. If those CID fonts are available, the global font variables
+    are updated and no further work is needed. Otherwise, it searches for common Thai fonts on the
+    local filesystem and registers them. As a final fallback, it resets the fonts to Helvetica.
+    """
+    global PDF_FONT_NORMAL, PDF_FONT_BOLD
+
+    # Bail out early if ReportLab isn't installed
     if not REPORTLAB_AVAILABLE:
         print("[ERROR] ReportLab not available!")
         return False
-    
-    # Check if fonts are already loaded and different from Helvetica
+
+    # Keep the fonts if they've already been set to something other than the defaults
     if (PDF_FONT_NORMAL != 'Helvetica' and PDF_FONT_BOLD != 'Helvetica-Bold' and
         PDF_FONT_NORMAL != 'Helvetica-Bold' and PDF_FONT_BOLD != 'Helvetica'):
         print(f"✅ Thai fonts already loaded: {PDF_FONT_NORMAL}, {PDF_FONT_BOLD}")
         return True
-    
-    # Check if fonts are already registered in ReportLab
+
+    # Try to use built-in CID fonts first
     try:
-        from reportlab.pdfbase import pdfmetrics
-        registered_fonts = list(pdfmetrics.getRegisteredFontNames())
-        
-        # Look for Thai fonts in registered fonts
-        thai_fonts = [f for f in registered_fonts if any(name in f for name in ['Sarabun', 'THSarabun', 'NotoSansThai', 'Kanit'])]
-        
-        if len(thai_fonts) >= 2:
-            # Find normal and bold fonts
-            normal_font = None
-            bold_font = None
-            
-            for font in thai_fonts:
-                if 'Bold' in font:
-                    bold_font = font
-                elif 'Regular' in font or (not 'Bold' in font and not 'Italic' in font):
-                    normal_font = font
-            
-            if normal_font and bold_font:
-                PDF_FONT_NORMAL = normal_font
-                PDF_FONT_BOLD = bold_font
-                print(f"✅ Found already registered Thai fonts: {PDF_FONT_NORMAL}, {PDF_FONT_BOLD}")
-                return True
+        if setup_unicode_cid_fonts():
+            return True
     except Exception as e:
-        print(f"⚠️ Could not check registered fonts: {e}")
-    
-    print("\n" + "="*60)
-    print("🔍 THAI FONT INITIALIZATION")
-    print("="*60)
-    
-    # Create fonts directory if not exists
-    fonts_dir = SERVER_DIR / 'fonts'
-    fonts_dir.mkdir(exist_ok=True)
-    print(f"📁 Fonts directory: {fonts_dir}")
-    
-    # Font candidates with multiple naming patterns
-    font_candidates = [
-        # (family_name, normal_files, bold_files)
-        ("Sarabun", 
-         ["Sarabun-Regular.ttf", "Sarabun.ttf"],
-         ["Sarabun-Bold.ttf", "Sarabun Bold.ttf"]),
+        print(f"⚠️ Could not register CID fonts: {e}")
+
+        # Step 2: Look for Thai fonts
+        candidates = [
+            ("THSarabunNew", "THSarabunNew.ttf", "THSarabunNew-Bold", "THSarabunNew Bold.ttf"),
+            ("THSarabunNew", "THSarabunNew.ttf", "THSarabunNew-Bold", "THSarabunNew-Bold.ttf"),
+            ("Sarabun", "Sarabun-Regular.ttf", "Sarabun-Bold", "Sarabun-Bold.ttf"),
+            ("NotoSansThai", "NotoSansThai-Regular.ttf", "NotoSansThai-Bold", "NotoSansThai-Bold.ttf"),
+        ]
         
-        ("THSarabunNew",
-         ["THSarabunNew.ttf", "thsarabunnew.ttf", "THSarabun.ttf"],
-         ["THSarabunNew Bold.ttf", "THSarabunNew-Bold.ttf", "thsarabunnewbold.ttf", "THSarabun Bold.ttf"]),
+        search_dirs = [
+            SERVER_DIR / 'fonts',
+            PROJECT_ROOT / 'fonts',
+            Path('C:/Windows/Fonts'),
+            Path('/usr/share/fonts'),
+            Path('/usr/local/share/fonts'),
+            Path('/System/Library/Fonts'),
+            Path.home() / '.fonts',
+        ]
         
-        ("NotoSansThai",
-         ["NotoSansThai-Regular.ttf", "NotoSansThai.ttf"],
-         ["NotoSansThai-Bold.ttf", "NotoSansThia Bold.ttf"]),
+        print(f"[INFO] Searching for Thai fonts in: {[str(d) for d in search_dirs if d.exists()]}")
         
-        ("Kanit",
-         ["Kanit-Regular.ttf", "Kanit.ttf"],
-         ["Kanit-Bold.ttf", "Kanit-SemiBold.ttf"]),
-    ]
-    
-    # Search directories
-    search_dirs = [
-        fonts_dir,  # Local fonts folder
-        SERVER_DIR / 'fonts',
-        PROJECT_ROOT / 'fonts',
-        Path('C:/Windows/Fonts'),  # Windows system fonts
-        Path('/usr/share/fonts'),  # Linux
-        Path('/System/Library/Fonts'),  # macOS
-        Path.home() / '.fonts',  # User fonts
-    ]
-    
-    # Try each font candidate
-    for family_name, normal_candidates, bold_candidates in font_candidates:
-        print(f"\n🔎 Searching for {family_name}...")
-        
-        normal_path = None
-        bold_path = None
-        
-        # Find normal font
-        for dir_path in search_dirs:
-            if not dir_path.exists():
-                continue
-            for normal_file in normal_candidates:
-                test_path = dir_path / normal_file
-                if test_path.exists():
-                    normal_path = test_path
-                    print(f"  ✓ Found normal: {normal_path}")
-                    break
-            if normal_path:
-                break
-        
-        # Find bold font
-        for dir_path in search_dirs:
-            if not dir_path.exists():
-                continue
-            for bold_file in bold_candidates:
-                test_path = dir_path / bold_file
-                if test_path.exists():
-                    bold_path = test_path
-                    print(f"  ✓ Found bold: {bold_path}")
-                    break
-            if bold_path:
-                break
-        
-        # If we have both fonts, register them
-        if normal_path and bold_path:
-            try:
-                # Register fonts
-                from reportlab.pdfbase import pdfmetrics
-                from reportlab.pdfbase.ttfonts import TTFont
+        for family_name, normal_file, bold_name, bold_file in candidates:
+            normal_path = None
+            bold_path = None
+            
+            for d in search_dirs:
+                if not d.exists():
+                    continue
+                    
+                if not normal_path:
+                    p = d / normal_file
+                    if p.exists():
+                        normal_path = p
+                        print(f"[FOUND] Normal font: {normal_path}")
                 
-                normal_name = f"{family_name}-Regular"
-                bold_name = f"{family_name}-Bold"
+                if not bold_path:
+                    p = d / bold_file
+                    if p.exists():
+                        bold_path = p
+                        print(f"[FOUND] Bold font: {bold_path}")
+                    # Try without space
+                    elif not bold_path:
+                        alt_bold = d / bold_file.replace(" ", "")
+                        if alt_bold.exists():
+                            bold_path = alt_bold
+                            print(f"[FOUND] Bold font (alt): {bold_path}")
+            
+            if normal_path and bold_path:
+                norm_reg_name = f"{family_name}-Regular"
+                bold_reg_name = f"{family_name}-Bold"
                 
-                pdfmetrics.registerFont(TTFont(normal_name, str(normal_path)))
-                pdfmetrics.registerFont(TTFont(bold_name, str(bold_path)))
-                
-                # Set global font variables
-                PDF_FONT_NORMAL = normal_name
-                PDF_FONT_BOLD = bold_name
-                
-                print(f"\n✅ SUCCESS! Thai fonts registered:")
-                print(f"   Normal: {PDF_FONT_NORMAL}")
-                print(f"   Bold: {PDF_FONT_BOLD}")
-                print("="*60 + "\n")
-                
-                return True
-                
-            except Exception as e:
-                print(f"  ❌ Registration failed: {e}")
-                continue
-        else:
-            if normal_path and not bold_path:
-                print(f"  ⚠️ Found normal but missing bold font")
-            elif bold_path and not normal_path:
-                print(f"  ⚠️ Found bold but missing normal font")
-    
-    # If no Thai fonts found, provide help
-    print("\n" + "="*60)
-    print("❌ NO THAI FONTS FOUND!")
-    print("="*60)
-    print("\n📥 HOW TO FIX:")
-    print(f"1. Download Sarabun font from Google Fonts:")
-    print(f"   https://fonts.google.com/specimen/Sarabun")
-    print(f"\n2. Extract and copy these files to:")
-    print(f"   {fonts_dir}")
-    print(f"   - Sarabun-Regular.ttf")
-    print(f"   - Sarabun-Bold.ttf")
-    print(f"\n3. Restart the server")
-    print("="*60 + "\n")
-    
-    # Fallback to Helvetica (won't show Thai)
-    PDF_FONT_NORMAL = 'Helvetica'
-    PDF_FONT_BOLD = 'Helvetica-Bold'
+                if _try_register_font(norm_reg_name, normal_path) and \
+                   _try_register_font(bold_reg_name, bold_path):
+                    # IMPORTANT: Set the global variables using globals() to ensure they persist
+                    globals()['PDF_FONT_NORMAL'] = norm_reg_name
+                    globals()['PDF_FONT_BOLD'] = bold_reg_name
+                    
+                    print(f"[SUCCESS] ✅ Registered Thai fonts: {family_name}")
+                    print(f"  Normal: {globals()['PDF_FONT_NORMAL']} -> {normal_path}")
+                    print(f"  Bold: {globals()['PDF_FONT_BOLD']} -> {bold_path}")
+                    
+                    # Double check the values
+                    print(f"[VERIFY] Global vars: Normal={globals()['PDF_FONT_NORMAL']}, Bold={globals()['PDF_FONT_BOLD']}")
+                    
+                    return True
+        
+        # If no Thai fonts found
+        print("[WARNING] ⚠️ No Thai fonts found! Using Helvetica (no Thai support)")
+        # Keep defaults
+        
+    except Exception as e:
+        print(f"[ERROR] Font initialization failed: {e}")
+        import traceback
+        traceback.print_exc()
     
     return False
 
@@ -2791,7 +2769,23 @@ if __name__ == "__main__":
         print(f"💡 To install missing dependencies: pip install {' '.join(missing_deps)}")
     
     # Ensure Thai fonts are registered for ReportLab
-    ensure_thai_fonts()
+    print("\n" + "="*60)
+    success = ensure_thai_fonts()
+    
+    # IMPORTANT: Check that fonts weren't reset
+    print(f"After loading: Normal={PDF_FONT_NORMAL}, Bold={PDF_FONT_BOLD}")
+    print(f"Success: {success}")
+    
+    if PDF_FONT_NORMAL == 'Helvetica' or PDF_FONT_BOLD == 'Helvetica-Bold':
+        print("❌ Still using Helvetica fonts")
+        # DO NOT reset here! Keep whatever was set
+    else:
+        print(f"✅ Using Thai fonts: {PDF_FONT_NORMAL}, {PDF_FONT_BOLD}")
+    
+    print("="*60 + "\n")
+    
+    # Verify font settings
+    verify_font_settings()
     
     Timer(3, open_browser).start()
     app.run(debug=True, port=5000, use_reloader=False) 
