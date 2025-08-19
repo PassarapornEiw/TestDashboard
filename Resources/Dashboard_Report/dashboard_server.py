@@ -570,46 +570,46 @@ def parse_excel_data(excel_path):
         else:
             status = "failed"   # Some valid tests failed
         
-        # Find associated images recursively in the feature directory and subdirectories
+        # Find associated evidence files recursively in the feature directory and subdirectories
         excel_dir = excel_path_obj.parent  # This should be the feature folder (e.g., Transfer/)
-        image_paths = []
+        evidence_paths = []
         try:
-            # Search for images and HTML in the feature directory and all subdirectories (TC001, TC002, etc.)
-            evidence_patterns = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.html", "*.htm"]
+            # Search for images, HTML, and Excel files in the feature directory and all subdirectories (TC001, TC002, etc.)
+            evidence_patterns = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.html", "*.htm", "*.xlsx", "*.xls"]
             for ext in evidence_patterns:
-                image_paths.extend(list(excel_dir.glob(f"**/{ext}")))
+                evidence_paths.extend(list(excel_dir.glob(f"**/{ext}")))
             
-            print(f"[DEBUG] Found {len(image_paths)} images in {excel_dir}")
-            for img in image_paths[:5]:  # Show first 5 for debugging
-                print(f"[DEBUG] Image found: {img}")
+            print(f"[DEBUG] Found {len(evidence_paths)} evidence files in {excel_dir}")
+            for evidence in evidence_paths[:5]:  # Show first 5 for debugging
+                print(f"[DEBUG] Evidence found: {evidence}")
                 
         except Exception as e:
-            print(f"Error searching for images in {excel_dir}: {e}")
-            image_paths = []
+            print(f"Error searching for evidence files in {excel_dir}: {e}")
+            evidence_paths = []
         
-        # Group images by test case (subfolder under feature)
+        # Group evidence files by test case (subfolder under feature)
         test_evidence = {}
-        for img_path in image_paths:
+        for evidence_path in evidence_paths:
             try:
-                # The test case folder is the immediate parent of the image file, relative to the feature folder
-                relative_path = img_path.relative_to(excel_dir)
+                # The test case folder is the immediate parent of the evidence file, relative to the feature folder
+                relative_path = evidence_path.relative_to(excel_dir)
                 if len(relative_path.parts) > 1:
                     test_case_name = relative_path.parts[0]  # First level folder under feature (TC001, TC002, etc.)
                 else:
-                    test_case_name = "General" # Fallback for images in the root of the feature folder
+                    test_case_name = "General" # Fallback for evidence files in the root of the feature folder
                 
                 # Convert to path relative to project root for serving
-                if PROJECT_ROOT in img_path.parents:
-                    relative_img_path = str(img_path.relative_to(PROJECT_ROOT)).replace("\\", "/")
+                if PROJECT_ROOT in evidence_path.parents:
+                    relative_evidence_path = str(evidence_path.relative_to(PROJECT_ROOT)).replace("\\", "/")
                     if test_case_name not in test_evidence:
                         test_evidence[test_case_name] = []
-                    test_evidence[test_case_name].append(relative_img_path)
-                    print(f"[DEBUG] Added image to {test_case_name}: {relative_img_path}")
+                    test_evidence[test_case_name].append(relative_evidence_path)
+                    print(f"[DEBUG] Added evidence file to {test_case_name}: {relative_evidence_path}")
                 else:
-                    print(f"Image path not within project root: {img_path}")
+                    print(f"Evidence path not within project root: {evidence_path}")
                     
             except Exception as e:
-                print(f"Could not process image path {img_path}: {e}")
+                print(f"Could not process evidence path {evidence_path}: {e}")
                 continue
                 
         print(f"[DEBUG] Final test_evidence: {test_evidence}")
@@ -644,7 +644,7 @@ def parse_excel_data(excel_path):
             "status": status,
             "run_timestamp": run_timestamp,
             "test_evidence": test_evidence,
-            "image_files": [str(p.relative_to(PROJECT_ROOT)).replace("\\", "/") for p in image_paths if PROJECT_ROOT in p.parents], # Keep for fallback
+            "evidence_files": [str(p.relative_to(PROJECT_ROOT)).replace("\\", "/") for p in evidence_paths if PROJECT_ROOT in p.parents], # Keep for fallback
         }
     except Exception as e:
         print(f"Error parsing Excel data from {excel_path}: {e}")
@@ -1481,14 +1481,14 @@ def export_pdf():
                                                             # Fallback: use original image with moderate dimensions
                                                             reportlab_img = ReportLabImage(str(img_abs), width=400, height=300)
                                                             pdf_width, pdf_height = 400, 300
-                                    
+                                                    
                                                     # Create image with caption
                                                     file_type_label = "HTML File" if file_extension in ['html', 'htm'] else "Screenshot"
                                                     img_with_caption = [
                                                         [reportlab_img],
                                                         [Paragraph(f"<b>{file_type_label}:</b> {img_filename}", caption_style)]
                                                     ]
-                                    
+                                                    
                                                     # Create table for image and caption
                                                     img_table = Table(img_with_caption, colWidths=[pdf_width])
                                                     img_table.setStyle(TableStyle([
@@ -1501,10 +1501,10 @@ def export_pdf():
                                                         ('TOPPADDING', (0,1), (-1,1), 5),   # Caption padding
                                                         ('BOTTOMPADDING', (0,1), (-1,1), 15), # Caption padding
                                                     ]))
-                                    
+                                                    
                                                     elements.append(img_table)
                                                     elements.append(Spacer(1, 10))
-                                    
+                                                    
                                                 except Exception as e:
                                                     print(f"Error processing file {img_path}: {e}")
                                                     elements.append(Paragraph(f"Error loading file: {img_path}", normal_style))
@@ -2841,9 +2841,49 @@ def _html_preview_placeholder_svg(filename: str, width: int = 800, height: int =
 </svg>'''
     return svg.encode("utf-8")
 
-@app.route('/api/html_thumbnail')
-def api_html_thumbnail():
-    """Return (and cache) a thumbnail PNG for an HTML evidence file.
+def _excel_preview_placeholder_svg(filename: str, width: int = 800, height: int = 450) -> bytes:
+    """Return a lightweight SVG placeholder for Excel file preview thumbnails.
+    This creates an Excel icon with filename for visual representation.
+    """
+    safe_name = (filename or "Excel File").replace("<", "&lt;").replace(">", "&gt;")
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">
+  <defs>
+    <linearGradient id="excel_g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#217346"/>
+      <stop offset="100%" stop-color="#1e6b3d"/>
+    </linearGradient>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#excel_g)"/>
+  <rect x="20" y="20" width="{width-40}" height="{height-40}" fill="#ffffff" stroke="#217346" stroke-width="2" rx="10"/>
+  
+  <!-- Excel Icon -->
+  <g transform="translate({width//2 - 40}, {height//2 - 60})">
+    <!-- Excel Sheet -->
+    <rect x="0" y="0" width="80" height="100" fill="#ffffff" stroke="#217346" stroke-width="2"/>
+    <!-- Excel Grid Lines -->
+    <line x1="0" y1="20" x2="80" y2="20" stroke="#217346" stroke-width="1"/>
+    <line x1="0" y1="40" x2="80" y2="40" stroke="#217346" stroke-width="1"/>
+    <line x1="0" y1="60" x2="80" y2="60" stroke="#217346" stroke-width="1"/>
+    <line x1="0" y1="80" x2="80" y2="80" stroke="#217346" stroke-width="1"/>
+    <line x1="20" y1="0" x2="20" y2="100" stroke="#217346" stroke-width="1"/>
+    <line x1="40" y1="0" x2="40" y2="100" stroke="#217346" stroke-width="1"/>
+    <line x1="60" y1="0" x2="60" y2="100" stroke="#217346" stroke-width="1"/>
+    <!-- Excel Logo -->
+    <rect x="25" y="25" width="30" height="15" fill="#217346"/>
+    <text x="40" y="35" fill="#ffffff" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" font-weight="bold">X</text>
+  </g>
+  
+  <!-- Filename -->
+  <g font-family="Arial, Helvetica, sans-serif" text-anchor="middle">
+    <text x="50%" y="85%" fill="#ffffff" font-size="16" font-weight="bold">Excel File</text>
+    <text x="50%" y="95%" fill="#ffffff" font-size="12">{safe_name[:30]}</text>
+  </g>
+</svg>'''
+    return svg.encode("utf-8")
+
+@app.route('/api/evidence_thumbnail')
+def api_evidence_thumbnail():
+    """Return (and cache) a thumbnail for evidence files (HTML, Excel, Images).
     Query param 'path' must be a project-root-relative path like 'results/..../file.html'.
     """
     rel_path = request.args.get('path')
@@ -2857,35 +2897,61 @@ def api_html_thumbnail():
         abs_path = (PROJECT_ROOT / rel_path_norm).resolve()
         if RESULTS_DIR not in abs_path.parents and abs_path != RESULTS_DIR:
             return abort(400, description="Path must be under results directory")
-        if not abs_path.exists() or abs_path.suffix.lower() not in ['.html', '.htm']:
+        
+        # Check file extension
+        file_ext = abs_path.suffix.lower()
+        if file_ext not in ['.html', '.htm', '.xlsx', '.xls', '.png', '.jpg', '.jpeg', '.gif', '.bmp']:
+            return abort(404, description="Unsupported file type")
+            
+        if not abs_path.exists():
             return abort(404)
     except Exception:
         return abort(400, description="Invalid path")
 
-    thumb_dir = _ensure_thumbnail_dir()
-    # Use a deterministic file name for the thumbnail
-    thumb_name = abs_path.relative_to(RESULTS_DIR).as_posix().replace('/', '_').replace('\\', '_') + '.png'
-    thumb_path = (thumb_dir / thumb_name).resolve()
-
-    # Regenerate thumbnail if missing or outdated
-    try:
-        source_mtime = abs_path.stat().st_mtime
-        need_build = True
-        if thumb_path.exists():
-            thumb_mtime = thumb_path.stat().st_mtime
-            need_build = thumb_mtime < source_mtime
-        if need_build:
-            # Generate synchronously to ensure we have something to serve
-            _html_to_thumbnail(abs_path, thumb_path)
-    except Exception as e:
-        print(f"[WARN] Error preparing thumbnail for {abs_path}: {e}")
-
-    if thumb_path.exists():
-        return send_file(str(thumb_path), mimetype='image/png')
-    else:
-        # Last-resort: return an inline SVG placeholder so UI always shows something
-        placeholder = _html_preview_placeholder_svg(abs_path.name)
+    # For Excel files, return SVG placeholder directly
+    if file_ext in ['.xlsx', '.xls']:
+        placeholder = _excel_preview_placeholder_svg(abs_path.name)
         return send_file(io.BytesIO(placeholder), mimetype='image/svg+xml')
+
+    # For HTML files, generate thumbnail
+    if file_ext in ['.html', '.htm']:
+        thumb_dir = _ensure_thumbnail_dir()
+        # Use a deterministic file name for the thumbnail
+        thumb_name = abs_path.relative_to(RESULTS_DIR).as_posix().replace('/', '_').replace('\\', '_') + '.png'
+        thumb_path = (thumb_dir / thumb_name).resolve()
+
+        # Regenerate thumbnail if missing or outdated
+        try:
+            source_mtime = abs_path.stat().st_mtime
+            need_build = True
+            if thumb_path.exists():
+                thumb_mtime = thumb_path.stat().st_mtime
+                need_build = thumb_mtime < source_mtime
+            if need_build:
+                # Generate synchronously to ensure we have something to serve
+                _html_to_thumbnail(abs_path, thumb_path)
+        except Exception as e:
+            print(f"[WARN] Error preparing thumbnail for {abs_path}: {e}")
+
+        if thumb_path.exists():
+            return send_file(str(thumb_path), mimetype='image/png')
+        else:
+            # Last-resort: return an inline SVG placeholder so UI always shows something
+            placeholder = _html_preview_placeholder_svg(abs_path.name)
+            return send_file(io.BytesIO(placeholder), mimetype='image/svg+xml')
+
+    # For image files, return the image directly (resized if needed)
+    if file_ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp']:
+        return send_file(str(abs_path), mimetype=f'image/{file_ext[1:]}')
+
+    # Fallback
+    return abort(404, description="Unsupported file type")
+
+# Keep backward compatibility
+@app.route('/api/html_thumbnail')
+def api_html_thumbnail():
+    """Legacy endpoint for HTML thumbnails - redirects to evidence_thumbnail."""
+    return api_evidence_thumbnail()
 
 def open_browser():
     """Function to open the browser to the dashboard URL."""

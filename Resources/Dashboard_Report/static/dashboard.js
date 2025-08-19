@@ -928,7 +928,7 @@ async function generateTestCaseGallery(feature, testCaseDetails, galleryId) {
             
                 screenshotGalleryHtml += `<div class="features-grid test-case-gallery" data-gallery-id="${testCaseGalleryId}">`;
                 
-                // Show preview images (including HTML as thumbnail via API)
+                // Show preview images (including HTML and Excel as thumbnails via API)
                 previewImages.forEach(imgPath => {
                     // Validate imgPath before using
                     if (!imgPath || typeof imgPath !== 'string' || imgPath.trim() === '') {
@@ -946,14 +946,19 @@ async function generateTestCaseGallery(feature, testCaseDetails, galleryId) {
                             fixedPath = '/results/' + imgPath;
                         }
                     }
-                    const isHtml = fixedPath.toLowerCase().endsWith('.html') || fixedPath.toLowerCase().endsWith('.htm');
+                    
+                    const fileExt = fixedPath.toLowerCase();
+                    const isHtml = fileExt.endsWith('.html') || fileExt.endsWith('.htm');
+                    const isExcel = fileExt.endsWith('.xlsx') || fileExt.endsWith('.xls');
                     const relForApi = fixedPath.startsWith('/results/') ? fixedPath.slice(1) : fixedPath.replace(/^\//, '');
-                    const thumbSrc = isHtml ? (`/api/html_thumbnail?path=${encodeURIComponent(relForApi)}`) : fixedPath;
+                    
+                    // Use evidence_thumbnail API for all file types
+                    const thumbSrc = `/api/evidence_thumbnail?path=${encodeURIComponent(relForApi)}`;
 
                     if (isHtml) {
-                        // Open HTML evidence in a new tab and exclude from LightGallery
+                        // HTML files: include in LightGallery for iframe display
                         screenshotGalleryHtml += `
-                            <a href="${fixedPath}" target="_blank" rel="noopener" class="gallery-item gallery-item-html" data-type="html" data-sub-html="<h4>${imgFileName}</h4>">
+                            <a href="${fixedPath}" class="gallery-item gallery-item-html" data-type="html" data-sub-html="<h4>${imgFileName}</h4>" data-iframe="true" data-lg-size="1200-800">
                                 <img src="${thumbSrc}" alt="HTML Evidence for ${actualFolderName}: ${imgFileName}" loading="lazy" />
                                 <div class="gallery-item-info">
                                     <span>${imgFileName}</span>
@@ -961,7 +966,20 @@ async function generateTestCaseGallery(feature, testCaseDetails, galleryId) {
                                 </div>
                             </a>
                         `;
+                    } else if (isExcel) {
+                        // Excel files - show icon and allow download
+                        screenshotGalleryHtml += `
+                            <a href="${fixedPath}" download class="gallery-item gallery-item-excel" data-type="excel" data-sub-html="<h4>${imgFileName}</h4>">
+                                <img src="${thumbSrc}" alt="Excel Evidence for ${actualFolderName}: ${imgFileName}" loading="lazy" />
+                                <div class="gallery-item-info">
+                                    <span>📊 ${imgFileName}</span>
+                                    <br><small>Test Case: ${actualFolderName}</small>
+                                    <br><small>Click to download</small>
+                                </div>
+                            </a>
+                        `;
                     } else {
+                        // Regular images
                         screenshotGalleryHtml += `
                             <a href="${fixedPath}" class="gallery-item gallery-item-image" data-type="image" data-sub-html="<h4>${imgFileName}</h4>" data-lg-size="1600-1200">
                                 <img src="${thumbSrc}" alt="Test Evidence for ${actualFolderName}: ${imgFileName}" loading="lazy" />
@@ -1385,6 +1403,26 @@ function initializeTestCaseGalleries(galleryId) {
             
             console.log('[DEBUG] Available plugins:', plugins.length);
             
+            // Debug gallery items before initializing LightGallery
+            const htmlItems = galleryElement.querySelectorAll('.gallery-item-html');
+            const imageItems = galleryElement.querySelectorAll('.gallery-item-image');
+            console.log(`[DEBUG] Gallery ${index} items:`, {
+                html: htmlItems.length,
+                image: imageItems.length,
+                total: galleryElement.querySelectorAll('.gallery-item').length
+            });
+            
+            // Debug HTML items attributes
+            htmlItems.forEach((item, idx) => {
+                console.log(`[DEBUG] HTML item ${idx}:`, {
+                    href: item.getAttribute('href'),
+                    iframe: item.getAttribute('data-iframe'),
+                    subHtml: item.getAttribute('data-sub-html'),
+                    size: item.getAttribute('data-lg-size'),
+                    classes: item.className
+                });
+            });
+            
             // Initialize separate LightGallery for each test case
             const lgInstance = lightGallery(galleryElement, {
                 plugins: plugins,
@@ -1393,8 +1431,8 @@ function initializeTestCaseGalleries(galleryId) {
                 actualSize: true,
                 download: true,
                 counter: true,
-                // Only attach LG to image items; HTML links open in new tab
-                selector: '.gallery-item-image',
+                // Attach LG to both image and HTML items; Excel items are excluded
+                selector: '.gallery-item-image, .gallery-item-html',
                 appendSubHtmlTo: '.lg-item',
                 backdropDuration: 500,
                 swipeThreshold: 50,
@@ -1435,6 +1473,19 @@ function initializeTestCaseGalleries(galleryId) {
                 },
                 onAfterOpen: () => {
                     console.log('[DEBUG] LightGallery opened successfully');
+                    
+                    // Debug current item info
+                    const currentItem = document.querySelector('.lg-current');
+                    if (currentItem) {
+                        const iframe = currentItem.querySelector('iframe');
+                        const img = currentItem.querySelector('img');
+                        console.log('[DEBUG] Current item opened:', {
+                            hasIframe: !!iframe,
+                            hasImg: !!img,
+                            iframeSrc: iframe ? iframe.src : null,
+                            imgSrc: img ? img.src : null
+                        });
+                    }
                 },
                 onBeforeClose: () => {
                     console.log('[DEBUG] LightGallery closing');
@@ -1628,9 +1679,13 @@ function showAllImagesModal(testCaseName, images, status) {
             fixedPath = rawPath.startsWith('results/') ? ('/' + rawPath) : ('/results/' + rawPath.replace(/^\//, ''));
         }
         const imgFileName = fixedPath.split('/').pop();
-        const isHtml = fixedPath.toLowerCase().endsWith('.html') || fixedPath.toLowerCase().endsWith('.htm');
+        const fileExt = fixedPath.toLowerCase();
+        const isHtml = fileExt.endsWith('.html') || fileExt.endsWith('.htm');
+        const isExcel = fileExt.endsWith('.xlsx') || fileExt.endsWith('.xls');
         const relForApi = fixedPath.startsWith('/results/') ? fixedPath.slice(1) : fixedPath.replace(/^\//, '');
-        const thumbSrc = isHtml ? (`/api/html_thumbnail?path=${encodeURIComponent(relForApi)}`) : fixedPath;
+        
+        // Use evidence_thumbnail API for all file types
+        const thumbSrc = `/api/evidence_thumbnail?path=${encodeURIComponent(relForApi)}`;
 
         if (isHtml) {
             return `
@@ -1642,6 +1697,20 @@ function showAllImagesModal(testCaseName, images, status) {
                     <div class="gallery-item-info">
                         <span>${imgFileName}</span>
                         <br><small>Test Case: ${testCaseName}</small>
+                    </div>
+                </div>
+            `;
+        } else if (isExcel) {
+            return `
+                <div class="gallery-item simple-gallery-item" data-index="${index}" data-src="${fixedPath}" data-type="excel" onclick="event.preventDefault(); event.stopPropagation(); return false;">
+                    <img src="${thumbSrc}" 
+                         alt="Excel Evidence: ${imgFileName}" 
+                         loading="lazy"
+                         style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; background: #fff; border: 1px solid #eee;" />
+                    <div class="gallery-item-info">
+                        <span>📊 ${imgFileName}</span>
+                        <br><small>Test Case: ${testCaseName}</small>
+                        <br><small>Excel File</small>
                     </div>
                 </div>
             `;
@@ -1683,7 +1752,7 @@ function showAllImagesModal(testCaseName, images, status) {
                 border-radius: 8px 8px 0 0 !important;
                 position: relative !important;
             ">
-                <h2 style="margin: 0; color: #333;">📸 รูปภาพทั้งหมดของ Test Case: ${testCaseName} ${statusBadge}</h2>
+                <h2 style="margin: 0; color: #333;">📸 ไฟล์ Evidence ทั้งหมดของ Test Case: ${testCaseName} ${statusBadge}</h2>
                 <span class="close" id="closeAllImagesBtn" style="
                     position: absolute !important;
                     top: 15px !important;
@@ -1697,7 +1766,7 @@ function showAllImagesModal(testCaseName, images, status) {
             </div>
             <div class="modal-body" style="padding: 25px !important;">
                 <div class="images-count-info" style="text-align: center; margin-bottom: 20px; color: #666; font-size: 1.1rem;">
-                    จำนวนรูปทั้งหมด: ${images.length} รูป (คลิกที่รูปเพื่อดูขนาดใหญ่)
+                    จำนวนไฟล์ Evidence ทั้งหมด: ${images.length} ไฟล์ (คลิกที่รูปเพื่อดูขนาดใหญ่)
                 </div>
                 <div id="allImagesGallery" class="features-grid" style="
                     display: grid !important;
@@ -1776,12 +1845,20 @@ function showAllImagesModal(testCaseName, images, status) {
         const src = item.getAttribute('data-src');
         const type = (item.getAttribute('data-type') || '').toLowerCase();
 
-        // HTML: open new tab; Image: handled by LightGallery upgrade later
+        // HTML: open new tab; Excel: download directly; Image: handled by LightGallery upgrade later
         item.addEventListener('click', function(e) {
             e.preventDefault();
             e.stopPropagation();
             if (type === 'html') {
                 window.open(src, '_blank', 'noopener');
+            } else if (type === 'excel') {
+                // Create a temporary link element to trigger download
+                const link = document.createElement('a');
+                link.href = src;
+                link.download = src.split('/').pop();
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
             }
         });
         
@@ -1851,6 +1928,12 @@ function tryUpgradeToLightGallery(modal) {
     if (window.lgFullscreen) plugins.push(window.lgFullscreen);
     if (window.lgIframe) plugins.push(window.lgIframe);
     
+    // Debug plugin availability
+    console.log('[DEBUG] Plugin availability check:');
+    console.log('[DEBUG] lgZoom:', !!window.lgZoom);
+    console.log('[DEBUG] lgFullscreen:', !!window.lgFullscreen);
+    console.log('[DEBUG] lgIframe:', !!window.lgIframe);
+    
     console.log('[DEBUG] Available plugins for modal upgrade:', plugins.length);
     
     try {
@@ -1859,12 +1942,38 @@ function tryUpgradeToLightGallery(modal) {
         // Convert only image items to LightGallery format; HTML items open new tab
         const galleryItems = galleryElement.querySelectorAll('.simple-gallery-item');
         console.log('[DEBUG] Converting', galleryItems.length, 'items to LightGallery format');
+        
+        // Debug item types
+        const typeCounts = {};
+        galleryItems.forEach(item => {
+            const type = (item.getAttribute('data-type') || '').toLowerCase();
+            typeCounts[type] = (typeCounts[type] || 0) + 1;
+        });
+        console.log('[DEBUG] Item type distribution:', typeCounts);
+        
         galleryItems.forEach((item, index) => {
             const imgSrc = item.getAttribute('data-src');
             const fileName = imgSrc.split('/').pop();
             const type = (item.getAttribute('data-type') || '').toLowerCase();
 
-            if (type !== 'html') {
+            if (type === 'html') {
+                // HTML files: use iframe plugin for LightGallery
+                item.setAttribute('href', imgSrc);
+                item.setAttribute('data-iframe', 'true');
+                item.setAttribute('data-sub-html', `<h4>${fileName}</h4>`);
+                item.setAttribute('data-lg-size', '1200-800');  // Set appropriate size for HTML
+                item.classList.add('lg-gallery-item');
+                console.log(`[DEBUG] Converted HTML item ${index} for LG (iframe):`, {
+                    href: imgSrc,
+                    iframe: item.getAttribute('data-iframe'),
+                    subHtml: item.getAttribute('data-sub-html'),
+                    size: item.getAttribute('data-lg-size')
+                });
+            } else if (type === 'excel') {
+                // Excel files: keep as simple download links (no LightGallery)
+                console.log(`[DEBUG] Excel item ${index} kept as download link`);
+            } else {
+                // Image files: standard LightGallery format
                 item.setAttribute('href', imgSrc);
                 item.setAttribute('data-sub-html', `<h4>${fileName}</h4>`);
                 item.setAttribute('data-lg-size', '1600-1200');
@@ -1875,6 +1984,16 @@ function tryUpgradeToLightGallery(modal) {
         
         // Initialize LightGallery
         console.log('[DEBUG] Initializing LightGallery with plugins:', plugins.length);
+        
+        // Debug selector items before initialization
+        const selectorItems = galleryElement.querySelectorAll('.lg-gallery-item');
+        console.log('[DEBUG] Items matching selector .lg-gallery-item:', selectorItems.length);
+        selectorItems.forEach((item, idx) => {
+            const type = item.getAttribute('data-type');
+            const iframe = item.getAttribute('data-iframe');
+            console.log(`[DEBUG] Selector item ${idx}:`, { type, iframe, href: item.getAttribute('href') });
+        });
+        
         const lgInstance = lightGallery(galleryElement, {
             plugins: plugins,
             speed: 800,
@@ -1889,29 +2008,43 @@ function tryUpgradeToLightGallery(modal) {
             touchMove: true,
             enableSwipe: true,
             enableTouch: true,
-            onBeforeOpen: () => {
-                console.log('[DEBUG] LightGallery onBeforeOpen triggered');
-                setTimeout(() => {
-                    // Set proper z-index for nested modal
-                    const backdrop = document.querySelector('.lg-backdrop');
-                    const outer = document.querySelector('.lg-outer');
+                            onBeforeOpen: () => {
+                    console.log('[DEBUG] LightGallery onBeforeOpen triggered');
+                    setTimeout(() => {
+                        // Set proper z-index for nested modal
+                        const backdrop = document.querySelector('.lg-backdrop');
+                        const outer = document.querySelector('.lg-outer');
+                        
+                        if (backdrop) backdrop.style.zIndex = '4000';
+                        if (outer) outer.style.zIndex = '4001';
+                        
+                        // Set other elements
+                        document.querySelectorAll('.lg-container').forEach(el => el.style.zIndex = '4002');
+                        document.querySelectorAll('.lg-toolbar').forEach(el => el.style.zIndex = '4003');
+                        document.querySelectorAll('.lg-actions').forEach(el => el.style.zIndex = '4004');
+                        document.querySelectorAll('.lg-prev, .lg-next, .lg-close').forEach(el => el.style.zIndex = '4005');
+                    }, 50);
+                },
+                onAfterOpen: () => {
+                    console.log('[DEBUG] LightGallery onAfterOpen triggered');
                     
-                    if (backdrop) backdrop.style.zIndex = '4000';
-                    if (outer) outer.style.zIndex = '4001';
-                    
-                    // Set other elements
-                    document.querySelectorAll('.lg-container').forEach(el => el.style.zIndex = '4002');
-                    document.querySelectorAll('.lg-toolbar').forEach(el => el.style.zIndex = '4003');
-                    document.querySelectorAll('.lg-actions').forEach(el => el.style.zIndex = '4004');
-                    document.querySelectorAll('.lg-prev, .lg-next, .lg-close').forEach(el => el.style.zIndex = '4005');
-                }, 50);
-            },
-            onAfterOpen: () => {
-                console.log('[DEBUG] LightGallery onAfterOpen triggered');
-            },
-            onBeforeClose: () => {
-                console.log('[DEBUG] LightGallery onBeforeClose triggered');
-            }
+                    // Debug current item info for modal LightGallery
+                    const currentItem = document.querySelector('.lg-current');
+                    if (currentItem) {
+                        const iframe = currentItem.querySelector('iframe');
+                        const img = currentItem.querySelector('img');
+                        console.log('[DEBUG] Modal LightGallery current item:', {
+                            hasIframe: !!iframe,
+                            hasImg: !!img,
+                            iframeSrc: iframe ? iframe.src : null,
+                            imgSrc: img ? img.src : null,
+                            itemClasses: currentItem.className
+                        });
+                    }
+                },
+                onBeforeClose: () => {
+                    console.log('[DEBUG] LightGallery onBeforeClose triggered');
+                }
         });
         
         // Store instance for cleanup

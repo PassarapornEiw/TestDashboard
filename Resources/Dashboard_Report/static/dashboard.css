@@ -1425,6 +1425,21 @@ td .btn-container * {
     box-shadow: 0 8px 25px rgba(0,0,0,0.2);
 }
 
+/* Excel file specific styling */
+.gallery-item-excel {
+    border: 2px solid #217346;
+}
+
+.gallery-item-excel:hover {
+    border-color: #1e6b3d;
+    box-shadow: 0 8px 25px rgba(33, 115, 70, 0.3);
+}
+
+.gallery-item-excel .gallery-item-info span {
+    color: #217346;
+    font-weight: bold;
+}
+
 /* Lightbox Customizations (Optional) */
 .lg-backdrop {
     background-color: rgba(20, 20, 30, 0.85) !important;
