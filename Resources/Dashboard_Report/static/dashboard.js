@@ -2060,13 +2060,34 @@ function tryUpgradeToLightGallery(modal) {
         
         galleryItems.forEach((item, index) => {
             const imgSrc = item.getAttribute('data-src');
-            const fileName = imgSrc ? imgSrc.split('/').pop() : `Item ${index + 1}`;
             const type = (item.getAttribute('data-type') || '').toLowerCase();
+
+            // Build a clean display name for caption
+            let displayName = `Item ${index + 1}`;
+            if (type === 'html') {
+                const originalHtml = item.getAttribute('data-original-html');
+                if (originalHtml) {
+                    displayName = originalHtml.split('/').pop();
+                }
+            } else if (imgSrc) {
+                // If the src is an API URL like /api/evidence_thumbnail?path=... extract the file name from the path query
+                try {
+                    const url = new URL(imgSrc, window.location.origin);
+                    const qPath = url.searchParams.get('path');
+                    if (qPath) {
+                        displayName = decodeURIComponent(qPath).split('/').pop();
+                    } else {
+                        displayName = imgSrc.split('/').pop();
+                    }
+                } catch (_) {
+                    displayName = imgSrc.split('/').pop();
+                }
+            }
 
             if (type === 'html') {
                 // HTML files: show thumbnail in LightGallery, not iframe
                 item.setAttribute('href', imgSrc); // imgSrc should already be thumbnail URL
-                item.setAttribute('data-sub-html', `<h4>${fileName}</h4>`);
+                item.setAttribute('data-sub-html', `<h4>${displayName}</h4>`);
                 item.setAttribute('data-lg-size', '800-600');
                 item.classList.add('lg-gallery-item');
                 console.log(`[DEBUG] Converted HTML item ${index} for LG (thumbnail):`, {
@@ -2080,7 +2101,7 @@ function tryUpgradeToLightGallery(modal) {
             } else {
                 // Image files: standard LightGallery format
                 item.setAttribute('href', imgSrc);
-                item.setAttribute('data-sub-html', `<h4>${fileName}</h4>`);
+                item.setAttribute('data-sub-html', `<h4>${displayName}</h4>`);
                 item.setAttribute('data-lg-size', '1600-1200');
                 item.classList.add('lg-gallery-item');
                 console.log(`[DEBUG] Converted image item ${index} for LG`);
