@@ -22,6 +22,42 @@ function hidePDFLoadingOverlay() {
     }
 }
 
+// Generic blocking overlay using the same PDF overlay element
+function showBlockingOverlay(title, message) {
+    const overlay = document.getElementById('pdfLoadingOverlay');
+    if (!overlay) return;
+    const titleEl = overlay.querySelector('.pdf-loading-title');
+    const msgEl = overlay.querySelector('.pdf-loading-message');
+    // Preserve previous texts to restore later
+    if (overlay && !overlay.dataset.prevTitle && titleEl) {
+        overlay.dataset.prevTitle = titleEl.textContent || '';
+    }
+    if (overlay && !overlay.dataset.prevMessage && msgEl) {
+        overlay.dataset.prevMessage = msgEl.textContent || '';
+    }
+    if (titleEl && title) titleEl.textContent = title;
+    if (msgEl && message) msgEl.textContent = message;
+    overlay.classList.add('show');
+    document.body.classList.add('overlay-active');
+}
+
+function hideBlockingOverlay() {
+    const overlay = document.getElementById('pdfLoadingOverlay');
+    if (!overlay) return;
+    const titleEl = overlay.querySelector('.pdf-loading-title');
+    const msgEl = overlay.querySelector('.pdf-loading-message');
+    if (titleEl && overlay.dataset.prevTitle !== undefined) {
+        titleEl.textContent = overlay.dataset.prevTitle;
+    }
+    if (msgEl && overlay.dataset.prevMessage !== undefined) {
+        msgEl.textContent = overlay.dataset.prevMessage;
+    }
+    overlay.classList.remove('show');
+    document.body.classList.remove('overlay-active');
+    delete overlay.dataset.prevTitle;
+    delete overlay.dataset.prevMessage;
+}
+
 // Helper function to format timestamp for display
 function formatTimestamp(timestamp) {
     try {
@@ -1546,6 +1582,8 @@ function downloadPDF(blob, filename = null) {
 async function openAllImagesFromData(element) {
     try {
         console.log('[DEBUG] openAllImagesFromData called');
+        // Show blocking overlay while preparing thumbnails (HTML screenshots can take time)
+        showBlockingOverlay('กำลังกำหนดค่ารูปภาพทั้งหมด', 'กรุณารอสักครู่ ระบบกำลังดำเนินการ');
         
         const testCaseName = element.getAttribute('data-testcase-name');
         const status = element.getAttribute('data-status');
@@ -1626,6 +1664,9 @@ async function openAllImagesFromData(element) {
         console.error('[DEBUG] Unexpected error in openAllImagesFromData:', error);
         console.error('[DEBUG] Error stack:', error.stack);
         alert('เกิดข้อผิดพลาดไม่คาดคิด: ' + error.message);
+    }
+    finally {
+        hideBlockingOverlay();
     }
 }
 
