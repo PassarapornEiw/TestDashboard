@@ -588,11 +588,17 @@ def parse_excel_data(excel_path):
         evidence_paths = []
         try:
             # Search for images, HTML, and Excel files in the feature directory and all subdirectories (TC001, TC002, etc.)
+            # EXCLUDE .thumbnails directories to prevent duplicates
             evidence_patterns = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.html", "*.htm", "*.xlsx", "*.xls"]
+            evidence_paths = []
             for ext in evidence_patterns:
-                evidence_paths.extend(list(excel_dir.glob(f"**/{ext}")))
+                found_files = list(excel_dir.glob(f"**/{ext}"))
+                # Filter out files in .thumbnails directories
+                filtered_files = [f for f in found_files if ".thumbnails" not in str(f)]
+                print(f"[DEBUG] Pattern {ext}: found {len(found_files)} files, filtered to {len(filtered_files)} (removed {len(found_files) - len(filtered_files)} from .thumbnails)")
+                evidence_paths.extend(filtered_files)
             
-            print(f"[DEBUG] Found {len(evidence_paths)} evidence files in {excel_dir}")
+            print(f"[DEBUG] Found {len(evidence_paths)} evidence files in {excel_dir} (excluding .thumbnails)")
             for evidence in evidence_paths[:5]:  # Show first 5 for debugging
                 print(f"[DEBUG] Evidence found: {evidence}")
                 
@@ -2811,14 +2817,11 @@ def _ensure_thumbnail_dir(html_path: Path = None) -> Path:
             print(f"[INFO] Created thumbnail directory: {thumb_subdir}")
             return thumb_subdir
         except Exception as e:
-            print(f"[WARN] Could not create structured thumbnail directory: {e}")
-            # Fallback to root thumbnail directory
-            pass
+            print(f"[ERROR] Could not create structured thumbnail directory: {e}")
+            raise Exception(f"Failed to create thumbnail directory for {html_path}: {e}")
     
-    # Fallback: create root thumbnail directory (for backward compatibility)
-    thumb_dir = RESULTS_DIR / ".thumbnails"
-    thumb_dir.mkdir(parents=True, exist_ok=True)
-    return thumb_dir
+    # NO FALLBACK: Only structured thumbnails are allowed
+    raise Exception("html_path is required for structured thumbnail directory creation")
 
 def _get_thumbnail_path(html_path: Path) -> Path:
     """Generate a thumbnail path that maintains the folder structure of the original file.
@@ -2840,11 +2843,9 @@ def _get_thumbnail_path(html_path: Path) -> Path:
         
         return thumb_dir / filename
     except Exception as e:
-        print(f"[WARN] Could not create structured thumbnail path: {e}")
-        # Fallback to root thumbnail directory with simple naming
-        thumb_dir = _ensure_thumbnail_dir()
-        thumb_name = html_path.relative_to(RESULTS_DIR).as_posix().replace('/', '_').replace('\\', '_') + '.png'
-        return thumb_dir / thumb_name
+        print(f"[ERROR] Could not create structured thumbnail path: {e}")
+        # NO FALLBACK: Only structured thumbnails are allowed
+        raise Exception(f"Failed to generate structured thumbnail path for {html_path}: {e}")
 
 def _html_to_thumbnail(html_abs_path: Path, thumb_abs_path: Path = None, width: int = 800, height: int = 450):
     """Generate a PNG thumbnail for an HTML file using Playwright if available.

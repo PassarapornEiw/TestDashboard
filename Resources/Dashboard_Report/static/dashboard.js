@@ -973,9 +973,9 @@ async function generateTestCaseGallery(feature, testCaseDetails, galleryId) {
                     console.log(`[DEBUG] Thumbnail URL for ${imgFileName}: ${thumbSrc}`);
 
                     if (isHtml) {
-                        // HTML files: include in LightGallery for iframe display
+                        // HTML files: use thumbnail for LightGallery display, keep original path for click action
                         screenshotGalleryHtml += `
-                            <a href="${fixedPath}" class="gallery-item gallery-item-html" data-type="html" data-sub-html="<h4>${imgFileName}</h4>" data-iframe="true" data-lg-size="1200-800">
+                            <a href="${thumbSrc}" class="gallery-item gallery-item-html" data-type="html" data-sub-html="<h4>${imgFileName}</h4>" data-original-html="${fixedPath}" data-lg-size="800-600">
                                 <img src="${thumbSrc}" alt="HTML Evidence for ${actualFolderName}: ${imgFileName}" loading="lazy" 
                                      onload="console.log('[DEBUG] Gallery HTML thumbnail loaded:', '${imgFileName}', this.naturalWidth, 'x', this.naturalHeight)"
                                      onerror="console.error('[DEBUG] Gallery HTML thumbnail failed to load:', '${imgFileName}', this.src)" />
@@ -1759,7 +1759,7 @@ function showAllImagesModal(testCaseName, images, status, actualFolderName = nul
 
         if (isHtml) {
             return `
-                <div class="gallery-item simple-gallery-item" data-index="${index}" data-src="${fixedPath}" data-type="html" onclick="event.preventDefault(); event.stopPropagation(); return false;">
+                <div class="gallery-item simple-gallery-item" data-index="${index}" data-src="${thumbSrc}" data-type="html" data-original-html="${fixedPath}" onclick="event.preventDefault(); event.stopPropagation(); return false;">
                     <img src="${thumbSrc}" 
                          alt="HTML Evidence: ${imgFileName}" 
                          loading="lazy"
@@ -1769,7 +1769,7 @@ function showAllImagesModal(testCaseName, images, status, actualFolderName = nul
                     <div class="gallery-item-info">
                         <span>🌐 ${imgFileName}</span>
                         <br><small>Test Case: ${displayName}</small>
-                        <br><small>HTML File</small>
+                        <br><small>HTML Thumbnail</small>
                     </div>
                 </div>
             `;
@@ -1834,6 +1834,9 @@ function showAllImagesModal(testCaseName, images, status, actualFolderName = nul
             <div class="modal-body" style="padding: 25px !important;">
                 <div class="images-count-info" style="text-align: center; margin-bottom: 20px; color: #666; font-size: 1.1rem;">
                     จำนวนไฟล์ Evidence ทั้งหมด: ${images.length} ไฟล์ (คลิกที่รูปเพื่อดูขนาดใหญ่)
+                    <br><small style="color: #888; font-style: italic; margin-top: 5px; display: block;">
+                        💡 HTML files แสดงเป็น thumbnail • คลิกเพื่อดูใน LightGallery • ดับเบิลคลิกเพื่อเปิดไฟล์ต้นฉบับ
+                    </small>
                 </div>
                 <div id="allImagesGallery" class="features-grid" style="
                     display: grid !important;
@@ -1909,37 +1912,49 @@ function showAllImagesModal(testCaseName, images, status, actualFolderName = nul
     
         galleryItems.forEach((item, index) => {
         const img = item.querySelector('img');
-        const src = item.getAttribute('data-src');
+        const src = item.getAttribute('data-src'); // This should be thumbnail URL for HTML files
         const type = (item.getAttribute('data-type') || '').toLowerCase();
 
-        // HTML: open new tab; Excel: download directly; Image: handled by LightGallery upgrade later
+        // Only handle Excel downloads explicitly; let LightGallery handle all image display (including HTML thumbnails)
         item.addEventListener('click', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            if (type === 'html') {
-                try {
-                    // Open via a temporary anchor to avoid popup blockers and spurious alerts
-                    const link = document.createElement('a');
-                    link.href = src;
-                    link.target = '_blank';
-                    link.rel = 'noopener noreferrer';
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                } catch (error) {
-                    console.error('Error opening HTML file:', error);
-                    // Silently fail without intrusive alerts
-                }
-            } else if (type === 'excel') {
-                // Create a temporary link element to trigger download
+            if (type === 'excel') {
+                e.preventDefault();
+                e.stopPropagation();
+                // Excel: download directly
+                const originalPath = item.getAttribute('data-original-html') || src;
                 const link = document.createElement('a');
-                link.href = src;
-                link.download = src.split('/').pop();
+                link.href = originalPath;
+                link.download = originalPath.split('/').pop();
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
             }
+            // For HTML and images: let LightGallery handle click to show thumbnail/image
+            // data-src already contains the correct thumbnail URL for HTML files
         });
+
+        // Add double-click handler for HTML files to open original
+        if (type === 'html') {
+            item.addEventListener('dblclick', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                const originalHtmlPath = item.getAttribute('data-original-html');
+                if (originalHtmlPath) {
+                    try {
+                        const link = document.createElement('a');
+                        link.href = originalHtmlPath;
+                        link.target = '_blank';
+                        link.rel = 'noopener noreferrer';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        console.log('[DEBUG] Opened original HTML file:', originalHtmlPath);
+                    } catch (error) {
+                        console.error('Error opening HTML file:', error);
+                    }
+                }
+            });
+        }
         
         // Add visual feedback
         item.style.cursor = 'pointer';
@@ -2049,15 +2064,13 @@ function tryUpgradeToLightGallery(modal) {
             const type = (item.getAttribute('data-type') || '').toLowerCase();
 
             if (type === 'html') {
-                // HTML files: use iframe plugin for LightGallery
-                item.setAttribute('href', imgSrc);
-                item.setAttribute('data-iframe', 'true');
+                // HTML files: show thumbnail in LightGallery, not iframe
+                item.setAttribute('href', imgSrc); // imgSrc should already be thumbnail URL
                 item.setAttribute('data-sub-html', `<h4>${fileName}</h4>`);
-                item.setAttribute('data-lg-size', '1200-800');  // Set appropriate size for HTML
+                item.setAttribute('data-lg-size', '800-600');
                 item.classList.add('lg-gallery-item');
-                console.log(`[DEBUG] Converted HTML item ${index} for LG (iframe):`, {
+                console.log(`[DEBUG] Converted HTML item ${index} for LG (thumbnail):`, {
                     href: imgSrc,
-                    iframe: item.getAttribute('data-iframe'),
                     subHtml: item.getAttribute('data-sub-html'),
                     size: item.getAttribute('data-lg-size')
                 });
