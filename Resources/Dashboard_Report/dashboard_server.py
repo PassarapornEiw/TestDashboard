@@ -12,8 +12,11 @@ import zipfile
 import threading
 import html
 import re
+import hashlib
+import shutil
 
 # Check for required dependencies
+
 try:
     from reportlab.lib.pagesizes import A4
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
@@ -49,9 +52,19 @@ except ImportError:
 try:
     from playwright.sync_api import sync_playwright
     PLAYWRIGHT_AVAILABLE = True
-except Exception:
+    print("✅ Playwright available for HTML thumbnail generation")
+except Exception as e:
     print("⚠️ Warning: Playwright not available. HTML thumbnail generation disabled.")
+    print(f"   To enable: pip install playwright && playwright install chromium")
     PLAYWRIGHT_AVAILABLE = False
+
+# Check if we have the minimum requirements for thumbnails
+THUMBNAIL_CAPABLE = PIL_AVAILABLE or PLAYWRIGHT_AVAILABLE
+if not THUMBNAIL_CAPABLE:
+    print("❌ Warning: No thumbnail generation capability available!")
+    print("   Install either PIL/Pillow or Playwright for thumbnail support")
+else:
+    print("✅ Thumbnail generation capability available")
 
 app = Flask(__name__)
 
@@ -2780,45 +2793,174 @@ def serve_results(filepath):
     return send_from_directory(RESULTS_DIR, filepath)
 
 # --- HTML Thumbnail Generation (cached) ---
-def _ensure_thumbnail_dir() -> Path:
+def _ensure_thumbnail_dir(html_path: Path = None) -> Path:
+    """Ensure thumbnail directory exists. If html_path is provided, create a subdirectory 
+    based on the test case folder structure to prevent cross-contamination.
+    
+    NEW STRUCTURE: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/
+    """
+    if html_path:
+        # Create thumbnail directory structure that mirrors the test case folder structure
+        # Example: results/20241201_120000/Feature1/TC001/file.html -> results/20241201_120000/Feature1/TC001/.thumbnails/
+        try:
+            # Get the relative path from results directory
+            rel_path = html_path.relative_to(RESULTS_DIR)
+            # Create thumbnail subdirectory structure INSIDE the test case folder
+            thumb_subdir = RESULTS_DIR / rel_path.parent / ".thumbnails"
+            thumb_subdir.mkdir(parents=True, exist_ok=True)
+            print(f"[INFO] Created thumbnail directory: {thumb_subdir}")
+            return thumb_subdir
+        except Exception as e:
+            print(f"[WARN] Could not create structured thumbnail directory: {e}")
+            # Fallback to root thumbnail directory
+            pass
+    
+    # Fallback: create root thumbnail directory (for backward compatibility)
     thumb_dir = RESULTS_DIR / ".thumbnails"
     thumb_dir.mkdir(parents=True, exist_ok=True)
     return thumb_dir
 
-def _html_to_thumbnail(html_abs_path: Path, thumb_abs_path: Path, width: int = 800, height: int = 450):
-    """Generate a PNG thumbnail for an HTML file using Playwright if available.
-    Falls back to a simple placeholder PNG if Playwright is unavailable or errors occur.
+def _get_thumbnail_path(html_path: Path) -> Path:
+    """Generate a thumbnail path that maintains the folder structure of the original file.
+    This prevents cross-contamination between different test cases.
+    
+    NEW STRUCTURE: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/file_hash.png
     """
     try:
-        if PLAYWRIGHT_AVAILABLE:
-            with sync_playwright() as p:
-                browser = p.chromium.launch()
-                page = browser.new_page(viewport={"width": width, "height": height})
-                page.goto(html_abs_path.as_uri(), wait_until="load")
-                page.screenshot(path=str(thumb_abs_path), full_page=False)
-                browser.close()
-                return
+        # Get the relative path from results directory
+        rel_path = html_path.relative_to(RESULTS_DIR)
+        # Create thumbnail path that mirrors the original structure INSIDE test case folder
+        thumb_dir = _ensure_thumbnail_dir(html_path)
+        
+        # Create a unique filename based on the full path
+        # Use hash of the full path to ensure uniqueness
+        import hashlib
+        path_hash = hashlib.md5(str(html_path).encode()).hexdigest()[:8]
+        filename = f"{html_path.stem}_{path_hash}.png"
+        
+        return thumb_dir / filename
     except Exception as e:
-        print(f"[WARN] Playwright thumbnail failed for {html_abs_path}: {e}")
+        print(f"[WARN] Could not create structured thumbnail path: {e}")
+        # Fallback to root thumbnail directory with simple naming
+        thumb_dir = _ensure_thumbnail_dir()
+        thumb_name = html_path.relative_to(RESULTS_DIR).as_posix().replace('/', '_').replace('\\', '_') + '.png'
+        return thumb_dir / thumb_name
 
+def _html_to_thumbnail(html_abs_path: Path, thumb_abs_path: Path = None, width: int = 800, height: int = 450):
+    """Generate a PNG thumbnail for an HTML file using Playwright if available.
+    Falls back to a simple placeholder PNG if Playwright is unavailable or errors occur.
+    
+    Args:
+        html_abs_path: Path to the HTML file
+        thumb_abs_path: Path where to save the thumbnail (if None, will be auto-generated)
+        width: Thumbnail width
+        height: Thumbnail height
+    """
+    # Auto-generate thumbnail path if not provided
+    if thumb_abs_path is None:
+        thumb_abs_path = _get_thumbnail_path(html_abs_path)
+    
+    print(f"[INFO] Generating thumbnail for {html_abs_path}")
+    print(f"[INFO] Thumbnail will be saved to: {thumb_abs_path}")
+    print(f"[DEBUG] PLAYWRIGHT_AVAILABLE = {PLAYWRIGHT_AVAILABLE}")
+    print(f"[DEBUG] PIL_AVAILABLE = {PIL_AVAILABLE}")
+    
+    # REMOVED REDUNDANT CODE: thumb_abs_path.parent.mkdir(parents=True, exist_ok=True)
+    # This is already handled by _ensure_thumbnail_dir() in _get_thumbnail_path()
+    
+    # Try Playwright first (best quality)
+    if PLAYWRIGHT_AVAILABLE:
+        try:
+            print(f"[INFO] Attempting Playwright HTML capture...")
+            playwright = sync_playwright().start()
+            try:
+                browser = playwright.chromium.launch()
+                page = browser.new_page(viewport={"width": width, "height": height})
+
+                # Build file URI for local HTML
+                file_uri = f"file:///{html_abs_path.as_posix().replace(chr(92), chr(47))}"
+                print(f"[INFO] Using file URI: {file_uri}")
+
+                page.goto(file_uri, wait_until="load")
+                page.wait_for_timeout(1000)
+
+                # Full page to ensure content captured
+                page.screenshot(path=str(thumb_abs_path), full_page=True, type='png')
+                browser.close()
+
+                if thumb_abs_path.exists() and thumb_abs_path.stat().st_size > 1000:
+                    print(f"[INFO] Successfully generated HTML thumbnail with Playwright: {thumb_abs_path}")
+                    return True
+                else:
+                    print(f"[WARN] Screenshot created but seems empty or too small")
+                    if thumb_abs_path.exists():
+                        thumb_abs_path.unlink()
+                    raise Exception("Screenshot file is empty or too small")
+            finally:
+                playwright.stop()
+        except Exception as e:
+            print(f"[WARN] Playwright thumbnail failed for {html_abs_path}: {e}")
+            print(f"[WARN] Error type: {type(e).__name__}")
+            print(f"[WARN] Error details: {str(e)}")
+    
     # Fallback: generate a simple placeholder PNG via Pillow
     if PIL_AVAILABLE:
         try:
-            img = PILImage.new("RGB", (width, height), color=(255, 255, 255))
+            print(f"[INFO] Using Pillow fallback for HTML thumbnail...")
+            img = PILImage.new("RGB", (width, height), color=(245, 247, 250))
             draw = ImageDraw.Draw(img)
-            text = "HTML Preview"
-            sub = html_abs_path.name
+            
+            # Create a more attractive placeholder
+            # Background rectangle
+            draw.rectangle([(20, 20), (width-20, height-20)], fill=(255, 255, 255), outline=(220, 220, 220), width=2)
+            
+            # HTML icon representation
+            icon_color = (74, 144, 226)  # Blue color for HTML
+            draw.rectangle([(width//2-40, height//2-60), (width//2+40, height//2-20)], fill=icon_color)
+            draw.text((width//2, height//2-40), "HTML", fill=(255, 255, 255), anchor="mm")
+            
+            # Text
             try:
                 font = ImageFont.load_default()
             except Exception:
                 font = None
-            # Center text approximately
-            draw.text((20, height // 2 - 20), text, fill=(64, 64, 64), font=font)
-            draw.text((20, height // 2 + 10), sub[:70], fill=(96, 96, 96), font=font)
-            img.save(str(thumb_abs_path), format="PNG")
-            return
+            
+            # Main text
+            draw.text((width//2, height//2+20), "HTML Preview", fill=(64, 64, 64), font=font, anchor="mm")
+            
+            # Filename (truncated if too long)
+            filename = html_abs_path.name
+            if len(filename) > 30:
+                filename = filename[:27] + "..."
+            draw.text((width//2, height//2+50), filename, fill=(96, 96, 96), font=font, anchor="mm")
+            
+            # Add warning text
+            draw.text((width//2, height//2+80), "Playwright not available", fill=(255, 100, 100), font=font, anchor="mm")
+            draw.text((width//2, height//2+100), "Install: pip install playwright", fill=(255, 100, 100), font=font, anchor="mm")
+            
+            img.save(str(thumb_abs_path), format="PNG", optimize=True)
+            print(f"[INFO] Generated fallback HTML thumbnail with Pillow: {thumb_abs_path}")
+            return True
         except Exception as e:
             print(f"[WARN] Pillow fallback thumbnail failed for {html_abs_path}: {e}")
+
+    # Last resort: create a very basic placeholder
+    if PIL_AVAILABLE:
+        try:
+            print(f"[INFO] Using last resort placeholder...")
+            # Create a simple colored rectangle as placeholder
+            img = PILImage.new("RGB", (width, height), color=(240, 240, 240))
+            draw = ImageDraw.Draw(img)
+            draw.rectangle([(0, 0), (width, height)], fill=(200, 200, 200), outline=(150, 150, 150), width=3)
+            draw.text((width//2, height//2), "HTML", fill=(100, 100, 100), anchor="mm")
+            img.save(str(thumb_abs_path), format="PNG")
+            print(f"[INFO] Generated basic HTML placeholder: {thumb_abs_path}")
+            return True
+        except Exception as e:
+            print(f"[ERROR] Failed to create any HTML thumbnail for {html_abs_path}: {e}")
+    
+    print(f"[ERROR] No thumbnail generation method available for {html_abs_path}")
+    return False
 
 def _html_preview_placeholder_svg(filename: str, width: int = 800, height: int = 450) -> bytes:
     """Return a lightweight SVG placeholder for HTML preview thumbnails.
@@ -2913,13 +3055,11 @@ def api_evidence_thumbnail():
         placeholder = _excel_preview_placeholder_svg(abs_path.name)
         return send_file(io.BytesIO(placeholder), mimetype='image/svg+xml')
 
-    # For HTML files, generate thumbnail
+    # For HTML files, generate thumbnail with better error handling
     if file_ext in ['.html', '.htm']:
-        thumb_dir = _ensure_thumbnail_dir()
-        # Use a deterministic file name for the thumbnail
-        thumb_name = abs_path.relative_to(RESULTS_DIR).as_posix().replace('/', '_').replace('\\', '_') + '.png'
-        thumb_path = (thumb_dir / thumb_name).resolve()
-
+        # Generate thumbnail path that maintains folder structure
+        thumb_path = _get_thumbnail_path(abs_path)
+        
         # Regenerate thumbnail if missing or outdated
         try:
             source_mtime = abs_path.stat().st_mtime
@@ -2927,14 +3067,38 @@ def api_evidence_thumbnail():
             if thumb_path.exists():
                 thumb_mtime = thumb_path.stat().st_mtime
                 need_build = thumb_mtime < source_mtime
+                
             if need_build:
+                print(f"[INFO] Generating thumbnail for {abs_path}")
+                print(f"[INFO] Using structured thumbnail path: {thumb_path}")
                 # Generate synchronously to ensure we have something to serve
-                _html_to_thumbnail(abs_path, thumb_path)
+                thumbnail_success = _html_to_thumbnail(abs_path, thumb_path)
+                
+                # Verify thumbnail was created successfully
+                if not thumbnail_success or not thumb_path.exists():
+                    print(f"[WARN] Thumbnail generation failed for {abs_path}")
+                    # Return SVG placeholder as fallback
+                    placeholder = _html_preview_placeholder_svg(abs_path.name)
+                    return send_file(io.BytesIO(placeholder), mimetype='image/svg+xml')
+                    
         except Exception as e:
-            print(f"[WARN] Error preparing thumbnail for {abs_path}: {e}")
+            print(f"[ERROR] Error preparing thumbnail for {abs_path}: {e}")
+            # Return SVG placeholder as fallback
+            placeholder = _html_preview_placeholder_svg(abs_path.name)
+            return send_file(io.BytesIO(placeholder), mimetype='image/svg+xml')
 
         if thumb_path.exists():
-            return send_file(str(thumb_path), mimetype='image/png')
+            try:
+                response = send_file(str(thumb_path), mimetype='image/png')
+                response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+                response.headers['Pragma'] = 'no-cache' 
+                response.headers['Expires'] = '0'
+                return response
+            except Exception as e:
+                print(f"[ERROR] Error serving thumbnail {thumb_path}: {e}")
+                # Return SVG placeholder as fallback
+                placeholder = _html_preview_placeholder_svg(abs_path.name)
+                return send_file(io.BytesIO(placeholder), mimetype='image/svg+xml')
         else:
             # Last-resort: return an inline SVG placeholder so UI always shows something
             placeholder = _html_preview_placeholder_svg(abs_path.name)
@@ -3110,41 +3274,381 @@ def create_html_preview_image(html_abs_path: Path, max_width: int = 500, max_hei
         print(f"[ERROR] Failed to create HTML preview image for {html_abs_path}: {e}")
         return None
 
+def clear_thumbnail_cache():
+    """Clear all thumbnail cache to force regeneration.
+    
+    NEW STRUCTURE: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/file_hash.png
+    """
+    try:
+        cleared_count = 0
+        
+        # Clear all .thumbnails folders in the new structure
+        for thumb_folder in RESULTS_DIR.rglob(".thumbnails"):
+            try:
+                # Check if this is in the correct location
+                # Should be: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/
+                parent_path = thumb_folder.parent
+                if parent_path.name == ".thumbnails":
+                    # Skip old centralized structure
+                    continue
+                
+                # Check if parent is a test case folder
+                grandparent = parent_path.parent
+                if grandparent and grandparent.parent:
+                    # Should be: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/
+                    # Check if grandparent.parent is timestamp folder
+                    timestamp_folder = grandparent.parent
+                    if timestamp_folder.name and any(char.isdigit() for char in timestamp_folder.name):
+                        # This is correct structure, clear it
+                        import shutil
+                        shutil.rmtree(thumb_folder)
+                        cleared_count += 1
+                        print(f"[INFO] Cleared thumbnail folder: {thumb_folder}")
+            except Exception as e:
+                print(f"[WARN] Error clearing thumbnail folder {thumb_folder}: {e}")
+        
+        # Also clear old centralized structure if it exists
+        old_thumb_root = RESULTS_DIR / ".thumbnails"
+        if old_thumb_root.exists():
+            try:
+                import shutil
+                shutil.rmtree(old_thumb_root)
+                print(f"[INFO] Cleared old centralized thumbnail structure: {old_thumb_root}")
+            except Exception as e:
+                print(f"[WARN] Could not clear old centralized structure: {e}")
+        
+        if cleared_count > 0:
+            print(f"[INFO] Cleared {cleared_count} thumbnail folders")
+            print(f"[INFO] All thumbnails will be regenerated with new structure")
+        else:
+            print(f"[INFO] No thumbnail folders found to clear")
+        
+        return True
+    except Exception as e:
+        print(f"[ERROR] Failed to clear thumbnail cache: {e}")
+        return False
+
+def force_cleanup_and_restart():
+    """Force cleanup of all thumbnails and prepare for fresh start.
+    
+    NEW STRUCTURE: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/file_hash.png
+    """
+    try:
+        print("[FORCE_CLEANUP] Starting forced cleanup of all thumbnails...")
+        
+        # First, try normal cleanup
+        cleanup_success = cleanup_old_thumbnail_structure()
+        migration_success = migrate_old_thumbnails()
+        
+        # Then, clear everything if needed
+        clear_success = clear_thumbnail_cache()
+        
+        # REMOVED: No need to create fresh thumbnail directory
+        # Thumbnails will be created on-demand in their respective test case folders
+        
+        print(f"[FORCE_CLEANUP] All thumbnails have been cleared")
+        print(f"[FORCE_CLEANUP] New thumbnails will be created in TestCaseID/.thumbnails/ when needed")
+        
+        return {
+            "cleanup_success": cleanup_success,
+            "migration_success": migration_success,
+            "clear_success": clear_success,
+            "message": "All thumbnails cleared, will be regenerated in new structure"
+        }
+    except Exception as e:
+        print(f"[ERROR] Force cleanup failed: {e}")
+        return {"error": str(e)}
+
+def get_thumbnail_info():
+    """Get information about thumbnail cache usage.
+    
+    NEW STRUCTURE: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/file_hash.png
+    """
+    try:
+        total_files = 0
+        total_size = 0
+        folders = []
+        
+        # Scan for .thumbnails folders in the new structure
+        for thumb_folder in RESULTS_DIR.rglob(".thumbnails"):
+            try:
+                # Check if this is in the correct location
+                # Should be: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/
+                parent_path = thumb_folder.parent
+                if parent_path.name == ".thumbnails":
+                    # Skip old centralized structure
+                    continue
+                
+                # Check if parent is a test case folder
+                grandparent = parent_path.parent
+                if grandparent and grandparent.parent:
+                    # Should be: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/
+                    # Check if grandparent.parent is timestamp folder
+                    timestamp_folder = grandparent.parent
+                    if timestamp_folder.name and any(char.isdigit() for char in timestamp_folder.name):
+                        # This is correct structure, count files
+                        folder_info = f"{timestamp_folder.name}/{grandparent.name}/{parent_path.name}"
+                        folders.append(folder_info)
+                        
+                        # Count files in this .thumbnails folder
+                        for file_item in thumb_folder.iterdir():
+                            if file_item.is_file() and file_item.suffix == '.png':
+                                total_files += 1
+                                total_size += file_item.stat().st_size
+            except Exception as e:
+                print(f"[WARN] Error scanning thumbnail folder {thumb_folder}: {e}")
+        
+        cache_size_mb = total_size / (1024 * 1024)
+        
+        return {
+            "total_thumbnails": total_files,
+            "cache_size_mb": round(cache_size_mb, 2),
+            "folders": sorted(folders),
+            "structure": "NEW: TestCaseID/.thumbnails/ in each test case folder"
+        }
+    except Exception as e:
+        print(f"[ERROR] Failed to get thumbnail info: {e}")
+        return {"error": str(e)}
+
+@app.route('/api/thumbnail_info')
+def api_thumbnail_info():
+    """API endpoint to get thumbnail cache information."""
+    return jsonify(get_thumbnail_info())
+
+@app.route('/api/clear_thumbnails', methods=['POST'])
+def api_clear_thumbnails():
+    """API endpoint to clear thumbnail cache."""
+    success = clear_thumbnail_cache()
+    return jsonify({"success": success, "message": "Thumbnail cache cleared" if success else "Failed to clear cache"})
+
+def cleanup_old_thumbnail_structure():
+    """Clean up old thumbnail structure that doesn't follow the new organized format.
+    
+    NEW STRUCTURE: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/file_hash.png
+    OLD STRUCTURE: results/.thumbnails/YYYYMMDD_HHMMSS/FeatureName/file_hash.png
+    """
+    try:
+        # Clean up old centralized .thumbnails folder structure
+        old_thumb_root = RESULTS_DIR / ".thumbnails"
+        if old_thumb_root.exists():
+            try:
+                import shutil
+                shutil.rmtree(old_thumb_root)
+                print(f"[CLEANUP] Removed old centralized thumbnail structure: {old_thumb_root}")
+                print(f"[CLEANUP] New structure will be: TestCaseID/.thumbnails/ in each test case folder")
+            except Exception as e:
+                print(f"[WARN] Could not remove old thumbnail structure: {e}")
+        
+        # Clean up any orphaned .thumbnails folders in wrong locations
+        cleaned_orphans = 0
+        for item in RESULTS_DIR.rglob(".thumbnails"):
+            try:
+                # Check if this .thumbnails folder is in the correct location
+                # Should be: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/
+                parent_path = item.parent
+                if parent_path.name == ".thumbnails":
+                    # This is the old centralized structure, already cleaned above
+                    continue
+                
+                # Check if parent is a test case folder (should have timestamp/feature structure)
+                grandparent = parent_path.parent
+                if grandparent and grandparent.parent:
+                    # Should be: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/
+                    # Check if grandparent.parent is timestamp folder
+                    timestamp_folder = grandparent.parent
+                    if timestamp_folder.name and any(char.isdigit() for char in timestamp_folder.name):
+                        # This looks like correct structure, keep it
+                        continue
+                
+                # This .thumbnails folder is in wrong location, remove it
+                try:
+                    shutil.rmtree(item)
+                    cleaned_orphans += 1
+                    print(f"[CLEANUP] Removed orphaned .thumbnails folder: {item}")
+                except Exception as e:
+                    print(f"[WARN] Could not remove orphaned .thumbnails folder {item}: {e}")
+                    
+            except Exception as e:
+                print(f"[WARN] Error checking .thumbnails folder {item}: {e}")
+        
+        if cleaned_orphans > 0:
+            print(f"[CLEANUP] Cleaned up {cleaned_orphans} orphaned .thumbnails folders")
+        else:
+            print(f"[CLEANUP] No orphaned .thumbnails folders found")
+        
+        return True
+    except Exception as e:
+        print(f"[ERROR] Failed to cleanup old thumbnail structure: {e}")
+        return False
+
+def migrate_old_thumbnails():
+    """Attempt to migrate old thumbnails to new structure if possible.
+    
+    NEW STRUCTURE: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/file_hash.png
+    """
+    try:
+        # Since we're changing to a completely different structure,
+        # we can't reliably migrate old thumbnails. Just clean them up.
+        print(f"[MIGRATION] New structure requires complete regeneration of thumbnails")
+        print(f"[MIGRATION] Old thumbnails cannot be migrated, they will be regenerated on-demand")
+        
+        # Clean up any remaining old structure
+        old_thumb_root = RESULTS_DIR / ".thumbnails"
+        if old_thumb_root.exists():
+            try:
+                import shutil
+                shutil.rmtree(old_thumb_root)
+                print(f"[MIGRATION] Removed remaining old thumbnail structure")
+            except Exception as e:
+                print(f"[WARN] Could not remove remaining old structure: {e}")
+        
+        return True
+    except Exception as e:
+        print(f"[ERROR] Failed to migrate old thumbnails: {e}")
+        return False
+
+@app.route('/api/cleanup_old_thumbnails', methods=['POST'])
+def api_cleanup_old_thumbnails():
+    """API endpoint to cleanup old thumbnail structure."""
+    cleanup_success = cleanup_old_thumbnail_structure()
+    migration_success = migrate_old_thumbnails()
+    
+    return jsonify({
+        "success": cleanup_success and migration_success,
+        "cleanup_success": cleanup_success,
+        "migration_success": migration_success,
+        "message": "Old thumbnail cleanup completed" if (cleanup_success and migration_success) else "Some cleanup operations failed"
+    })
+
+@app.route('/api/thumbnail_status')
+def api_thumbnail_status():
+    """API endpoint to get comprehensive thumbnail status including cleanup info."""
+    cache_info = get_thumbnail_info()
+    
+    # Check for old structure
+    thumb_root = RESULTS_DIR / ".thumbnails"
+    old_files_count = 0
+    old_dirs_count = 0
+    
+    if thumb_root.exists():
+        for item in thumb_root.iterdir():
+            if item.is_file() and item.suffix == '.png':
+                if '_' in item.stem:
+                    old_files_count += 1
+            elif item.is_dir():
+                dir_name = item.name
+                if not (dir_name.replace('_', '').replace('-', '').isdigit() or 
+                       any(char.isdigit() for char in dir_name)):
+                    old_dirs_count += 1
+    
+    return jsonify({
+        "cache_info": cache_info,
+        "old_structure": {
+            "old_files": old_files_count,
+            "old_directories": old_dirs_count,
+            "needs_cleanup": old_files_count > 0 or old_dirs_count > 0
+        },
+        "recommendations": {
+            "cleanup_needed": old_files_count > 0 or old_dirs_count > 0,
+            "message": f"Found {old_files_count} old files and {old_dirs_count} old directories that should be cleaned up" if (old_files_count > 0 or old_dirs_count > 0) else "No cleanup needed"
+        }
+    })
+
+@app.route('/api/force_cleanup_thumbnails', methods=['POST'])
+def api_force_cleanup_thumbnails():
+    """API endpoint to force cleanup all thumbnails and restart fresh."""
+    result = force_cleanup_and_restart()
+    return jsonify(result)
+
 if __name__ == "__main__":
-    print("🚀 Starting Test Dashboard Server...")
-    print(f"Project Root: {PROJECT_ROOT}")
-    print("🌐 Dashboard will open automatically at: http://127.0.0.1:5000")
-    
-    # Check dependencies
-    missing_deps = []
-    if not REPORTLAB_AVAILABLE:
-        missing_deps.append("reportlab")
-    if not MATPLOTLIB_AVAILABLE:
-        missing_deps.append("matplotlib")
-    if not PIL_AVAILABLE:
-        missing_deps.append("Pillow")
-    
-    if missing_deps:
-        print(f"💡 To install missing dependencies: pip install {' '.join(missing_deps)}")
-    
-    # Ensure Thai fonts are registered for ReportLab
-    print("\n" + "="*60)
-    success = ensure_thai_fonts()
-    
-    # IMPORTANT: Check that fonts weren't reset
-    print(f"After loading: Normal={PDF_FONT_NORMAL}, Bold={PDF_FONT_BOLD}")
-    print(f"Success: {success}")
-    
-    if PDF_FONT_NORMAL == 'Helvetica' or PDF_FONT_BOLD == 'Helvetica-Bold':
-        print("❌ Still using Helvetica fonts")
-        # DO NOT reset here! Keep whatever was set
-    else:
-        print(f"✅ Using Thai fonts: {PDF_FONT_NORMAL}, {PDF_FONT_BOLD}")
-    
-    print("="*60 + "\n")
+    print("🚀 Starting Dashboard Report Server...")
+    print(f"📁 Project Root: {PROJECT_ROOT}")
+    print(f"📊 Results Directory: {RESULTS_DIR}")
     
     # Verify font settings
     verify_font_settings()
     
-    Timer(3, open_browser).start()
-    app.run(debug=True, port=5000, use_reloader=False) 
+    # Ensure Thai fonts are registered for ReportLab
+    print("\n" + "="*60)
+    print("THAI FONT SETUP")
+    print("="*60)
+    success = ensure_thai_fonts()
+    print(f"Thai font setup result: {success}")
+    print("="*60)
+    
+    # Check thumbnail capabilities
+    print("\n" + "="*60)
+    print("THUMBNAIL CAPABILITIES")
+    print("="*60)
+    if PLAYWRIGHT_AVAILABLE:
+        print("✅ Playwright: Available for high-quality HTML thumbnails")
+    else:
+        print("❌ Playwright: Not available")
+        print("   Install with: pip install playwright && playwright install chromium")
+    
+    if PIL_AVAILABLE:
+        print("✅ PIL/Pillow: Available for fallback thumbnails")
+    else:
+        print("❌ PIL/Pillow: Not available")
+        print("   Install with: pip install Pillow")
+    
+    if THUMBNAIL_CAPABLE:
+        print("✅ Overall: Thumbnail generation is available")
+    else:
+        print("❌ Overall: No thumbnail generation capability")
+        print("   Install either Playwright or PIL/Pillow")
+    
+    print("="*60)
+    
+    # Ensure thumbnail directory exists
+    if THUMBNAIL_CAPABLE:
+        # REMOVED: No need to create root thumbnail directory
+        # Thumbnails will be created on-demand in TestCaseID/.thumbnails/ folders
+        print(f"📸 Thumbnail system ready")
+        print(f"📁 Thumbnails will be organized by test case folder structure")
+        print(f"   NEW STRUCTURE: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/file_hash.png")
+        
+        # Clean up old thumbnail structure
+        print("\n🧹 Cleaning up old thumbnail structure...")
+        cleanup_success = cleanup_old_thumbnail_structure()
+        if cleanup_success:
+            print("✅ Old thumbnail structure cleanup completed")
+        else:
+            print("⚠️ Old thumbnail structure cleanup had issues")
+        
+        # Attempt to migrate old thumbnails
+        print("🔄 Attempting to migrate old thumbnails...")
+        migration_success = migrate_old_thumbnails()
+        if migration_success:
+            print("✅ Old thumbnail migration completed")
+        else:
+            print("⚠️ Old thumbnail migration had issues")
+        
+        # Test structured thumbnail creation
+        try:
+            test_html_path = RESULTS_DIR / "test_example.html"
+            test_thumb_path = _get_thumbnail_path(test_html_path)
+            print(f"🔍 Test thumbnail path structure: {test_thumb_path}")
+            print(f"   This shows how thumbnails will be organized")
+        except Exception as e:
+            print(f"⚠️ Could not demonstrate thumbnail structure: {e}")
+        
+        # Show existing thumbnail cache info
+        cache_info = get_thumbnail_info()
+        if cache_info.get("total_thumbnails", 0) > 0:
+            print(f"📊 Existing thumbnail cache: {cache_info['total_thumbnails']} files, {cache_info['cache_size_mb']} MB")
+            if cache_info.get("folders"):
+                print(f"📂 Cache folders: {', '.join(cache_info['folders'][:5])}{'...' if len(cache_info['folders']) > 5 else ''}")
+        else:
+            print(f"📊 No existing thumbnail cache found")
+    
+    print("="*60)
+    
+    print("\n🌐 Starting web server...")
+    print("📱 Dashboard will be available at: http://127.0.0.1:5000")
+    
+    # Open browser after a short delay
+    Timer(1.5, open_browser).start()
+    
+    # Start the Flask app
+    app.run(debug=False, host='127.0.0.1', port=5000)

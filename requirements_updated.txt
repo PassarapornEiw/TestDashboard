@@ -1,42 +1,30 @@
-# Core dependencies for Dashboard Server
-flask>=2.0.0
+# Core dependencies for Dashboard Report Server
+Flask>=2.0.0
 pandas>=1.3.0
 openpyxl>=3.0.0
 
-# PDF Generation
+# PDF generation
 reportlab>=3.6.0
 
-# Image Processing
-Pillow>=8.0.0
-
-# HTML to Image Conversion
-playwright>=1.30.0
-
-# Data Visualization
+# Chart generation
 matplotlib>=3.5.0
 
-# Optional: Enhanced Excel support
-xlrd>=2.0.0
+# Image processing for thumbnails
+Pillow>=9.0.0
 
-# Optional: Better image formats support
-Pillow>=8.0.0
+# HTML to image conversion (optional but recommended for better thumbnails)
+playwright>=1.30.0
 
-# Optional: Performance improvements
-numpy>=1.21.0
-
-# Development dependencies (optional)
-# pytest>=6.0.0
-# black>=21.0.0
-# flake8>=3.8.0
+# Additional utilities
+pathlib2>=2.3.0
 
 # Installation instructions:
-# 1. Install Python packages:
+# 1. Install basic dependencies:
 #    pip install -r requirements_updated.txt
 #
-# 2. Install Playwright browsers:
+# 2. Install Playwright browser (for HTML thumbnails):
 #    playwright install chromium
 #
-# 3. Verify installation:
-#    python -c "from playwright.sync_api import sync_playwright; print('Playwright OK')"
-#    python -c "from PIL import Image; print('Pillow OK')"
-#    python -c "from reportlab.pdfgen import canvas; print('ReportLab OK')"
+# 3. If you encounter issues with Playwright, you can still use the system
+#    with Pillow fallback thumbnails by skipping step 2.
+

@@ -148,3 +148,4 @@ python test_full_page_capture.py
 ## สรุป
 
 การแก้ไขปัญหาด้วย Full Page Capture ทำให้ HTML content แสดงผลครบถ้วนใน PDF reports ไม่มีเนื้อหาที่ถูกตัดทอน และรองรับ dynamic content ได้ดีขึ้น ทำให้รายงานมีความสมบูรณ์และน่าเชื่อถือมากขึ้น
+

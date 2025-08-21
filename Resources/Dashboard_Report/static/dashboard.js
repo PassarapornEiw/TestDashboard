@@ -183,6 +183,22 @@ function setupEventListeners() {
         }
     });
 
+    // Handle window focus to refresh thumbnails when returning from HTML tab
+    window.addEventListener('focus', function() {
+        console.log('[DEBUG] Window focused - checking for thumbnail refresh');
+        refreshAllModalThumbnails();
+    });
+
+    // Handle page visibility change (when tab becomes visible again)
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) {
+            console.log('[DEBUG] Page became visible - checking for thumbnail refresh');
+            setTimeout(() => {
+                refreshAllModalThumbnails();
+            }, 500); // Small delay to ensure tab is fully active
+        }
+    });
+
     // Download PDF button event listener
     // Note: exportPdfBtn now uses onclick="downloadLatestPDF()" in HTML
     // No additional event listener needed
@@ -954,12 +970,15 @@ async function generateTestCaseGallery(feature, testCaseDetails, galleryId) {
                     
                     // Use evidence_thumbnail API for all file types
                     const thumbSrc = `/api/evidence_thumbnail?path=${encodeURIComponent(relForApi)}`;
+                    console.log(`[DEBUG] Thumbnail URL for ${imgFileName}: ${thumbSrc}`);
 
                     if (isHtml) {
                         // HTML files: include in LightGallery for iframe display
                         screenshotGalleryHtml += `
                             <a href="${fixedPath}" class="gallery-item gallery-item-html" data-type="html" data-sub-html="<h4>${imgFileName}</h4>" data-iframe="true" data-lg-size="1200-800">
-                                <img src="${thumbSrc}" alt="HTML Evidence for ${actualFolderName}: ${imgFileName}" loading="lazy" />
+                                <img src="${thumbSrc}" alt="HTML Evidence for ${actualFolderName}: ${imgFileName}" loading="lazy" 
+                                     onload="console.log('[DEBUG] Gallery HTML thumbnail loaded:', '${imgFileName}', this.naturalWidth, 'x', this.naturalHeight)"
+                                     onerror="console.error('[DEBUG] Gallery HTML thumbnail failed to load:', '${imgFileName}', this.src)" />
                                 <div class="gallery-item-info">
                                     <span>${imgFileName}</span>
                                     <br><small>Test Case: ${actualFolderName}</small>
@@ -1524,7 +1543,7 @@ function downloadPDF(blob, filename = null) {
 }
 
 // Helper function to open all images modal from data attributes
-function openAllImagesFromData(element) {
+async function openAllImagesFromData(element) {
     try {
         console.log('[DEBUG] openAllImagesFromData called');
         
@@ -1595,11 +1614,14 @@ function openAllImagesFromData(element) {
             alert('ไม่มีรูปภาพที่ถูกต้องสำหรับ test case นี้');
             return;
         }
-        
+
+        // NEW: Eagerly generate thumbnails to ensure .thumbnails exists and HTML screenshots are captured
+        await prefetchEvidenceThumbnails(validImages);
+
         console.log('[DEBUG] Final valid images count:', validImages.length);
         console.log('[DEBUG] Sample valid paths:', validImages.slice(0, 3));
         
-        showAllImagesModal(testCaseName, validImages, status);
+        showAllImagesModal(testCaseName, validImages, status, testCaseName);
     } catch (error) {
         console.error('[DEBUG] Unexpected error in openAllImagesFromData:', error);
         console.error('[DEBUG] Error stack:', error.stack);
@@ -1607,8 +1629,52 @@ function openAllImagesFromData(element) {
     }
 }
 
+// NEW: Helper function to eagerly generate thumbnails and ensure .thumbnails directory exists
+async function prefetchEvidenceThumbnails(imagePaths) {
+    try {
+        console.log('[DEBUG] Prefetching thumbnails for', imagePaths.length, 'files to ensure .thumbnails directory exists');
+        
+        const requests = [];
+        imagePaths.forEach((p, index) => {
+            if (!p || typeof p !== 'string') return;
+            
+            const lower = p.toLowerCase();
+            // We use the same endpoint for all file types; HTML files will trigger generation
+            if (lower.endsWith('.html') || lower.endsWith('.htm') || lower.endsWith('.xlsx') || lower.endsWith('.xls') || /\.(png|jpe?g|gif|bmp)$/.test(lower)) {
+                const relForApi = p.startsWith('/results/') ? p.slice(1) : p.replace(/^\//, '');
+                const url = `/api/evidence_thumbnail?path=${encodeURIComponent(relForApi)}`;
+                
+                console.log(`[DEBUG] Prefetching thumbnail ${index + 1}: ${relForApi}`);
+                requests.push(
+                    fetch(url, { cache: 'reload' })
+                        .then(response => {
+                            if (response.ok) {
+                                console.log(`[DEBUG] Successfully prefetched thumbnail for: ${relForApi}`);
+                            } else {
+                                console.warn(`[DEBUG] Failed to prefetch thumbnail for: ${relForApi} (${response.status})`);
+                            }
+                        })
+                        .catch(error => {
+                            console.warn(`[DEBUG] Error prefetching thumbnail for: ${relForApi}:`, error);
+                        })
+                );
+            }
+        });
+        
+        if (requests.length > 0) {
+            console.log(`[DEBUG] Sending ${requests.length} thumbnail prefetch requests...`);
+            await Promise.allSettled(requests);
+            console.log('[DEBUG] Thumbnail prefetch completed');
+        } else {
+            console.log('[DEBUG] No thumbnail prefetch requests needed');
+        }
+    } catch (e) {
+        console.log('[DEBUG] prefetchEvidenceThumbnails error (non-fatal):', e);
+    }
+}
+
 // Function to show all images modal for specific test case
-function showAllImagesModal(testCaseName, images, status) {
+function showAllImagesModal(testCaseName, images, status, actualFolderName = null) {
     console.log('[DEBUG] showAllImagesModal called with:', {
         testCaseName, 
         status, 
@@ -1667,6 +1733,9 @@ function showAllImagesModal(testCaseName, images, status) {
         visibility: visible !important;
     `;
     
+    // Use actualFolderName if provided, otherwise fallback to testCaseName
+    const displayName = actualFolderName || testCaseName;
+    
     const statusBadge = status === 'pass' ? '<span class="status-badge status-passed">PASSED</span>' :
                        status === 'fail' ? '<span class="status-badge status-failed">FAILED</span>' :
                        '<span class="status-badge" style="background: #999; color: white;">UNKNOWN</span>';
@@ -1686,6 +1755,7 @@ function showAllImagesModal(testCaseName, images, status) {
         
         // Use evidence_thumbnail API for all file types
         const thumbSrc = `/api/evidence_thumbnail?path=${encodeURIComponent(relForApi)}`;
+        console.log(`[DEBUG] showAllImagesModal - Thumbnail URL for ${imgFileName}: ${thumbSrc}`);
 
         if (isHtml) {
             return `
@@ -1693,37 +1763,34 @@ function showAllImagesModal(testCaseName, images, status) {
                     <img src="${thumbSrc}" 
                          alt="HTML Evidence: ${imgFileName}" 
                          loading="lazy"
+                         onload="console.log('[DEBUG] HTML thumbnail loaded:', '${imgFileName}', this.naturalWidth, 'x', this.naturalHeight)"
+                         onerror="console.error('[DEBUG] HTML thumbnail failed to load:', '${imgFileName}', this.src); this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjE1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNiIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkhUTUwgUHJldmlldzwvdGV4dD48L3N2Zz4=';"
                          style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; background: #fff; border: 1px solid #eee;" />
                     <div class="gallery-item-info">
-                        <span>${imgFileName}</span>
-                        <br><small>Test Case: ${testCaseName}</small>
+                        <span>🌐 ${imgFileName}</span>
+                        <br><small>Test Case: ${displayName}</small>
+                        <br><small>HTML File</small>
                     </div>
                 </div>
             `;
         } else if (isExcel) {
             return `
                 <div class="gallery-item simple-gallery-item" data-index="${index}" data-src="${fixedPath}" data-type="excel" onclick="event.preventDefault(); event.stopPropagation(); return false;">
-                    <img src="${thumbSrc}" 
-                         alt="Excel Evidence: ${imgFileName}" 
-                         loading="lazy"
-                         style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; background: #fff; border: 1px solid #eee;" />
+                    <img src="${thumbSrc}" alt="Excel Evidence for ${testCaseName}: ${imgFileName}" loading="lazy" />
                     <div class="gallery-item-info">
                         <span>📊 ${imgFileName}</span>
-                        <br><small>Test Case: ${testCaseName}</small>
-                        <br><small>Excel File</small>
+                        <br><small>Test Case: ${displayName}</small>
+                        <br><small>Click to download</small>
                     </div>
                 </div>
             `;
         } else {
             return `
                 <div class="gallery-item simple-gallery-item" data-index="${index}" data-src="${fixedPath}" data-type="image" onclick="event.preventDefault(); event.stopPropagation(); return false;">
-                    <img src="${thumbSrc}" 
-                         alt="Test Evidence: ${imgFileName}" 
-                         loading="lazy"
-                         style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px;" />
+                    <img src="${thumbSrc}" alt="Test Evidence for ${testCaseName}: ${imgFileName}" loading="lazy" />
                     <div class="gallery-item-info">
                         <span>${imgFileName}</span>
-                        <br><small>Test Case: ${testCaseName}</small>
+                        <br><small>Test Case: ${displayName}</small>
                     </div>
                 </div>
             `;
@@ -1752,7 +1819,7 @@ function showAllImagesModal(testCaseName, images, status) {
                 border-radius: 8px 8px 0 0 !important;
                 position: relative !important;
             ">
-                <h2 style="margin: 0; color: #333;">📸 ไฟล์ Evidence ทั้งหมดของ Test Case: ${testCaseName} ${statusBadge}</h2>
+                <h2 style="margin: 0; color: #333;">📸 ไฟล์ Evidence ทั้งหมดของ Test Case: ${displayName} ${statusBadge}</h2>
                 <span class="close" id="closeAllImagesBtn" style="
                     position: absolute !important;
                     top: 15px !important;
@@ -1850,7 +1917,19 @@ function showAllImagesModal(testCaseName, images, status) {
             e.preventDefault();
             e.stopPropagation();
             if (type === 'html') {
-                window.open(src, '_blank', 'noopener');
+                try {
+                    // Open via a temporary anchor to avoid popup blockers and spurious alerts
+                    const link = document.createElement('a');
+                    link.href = src;
+                    link.target = '_blank';
+                    link.rel = 'noopener noreferrer';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                } catch (error) {
+                    console.error('Error opening HTML file:', error);
+                    // Silently fail without intrusive alerts
+                }
             } else if (type === 'excel') {
                 // Create a temporary link element to trigger download
                 const link = document.createElement('a');
@@ -1876,21 +1955,34 @@ function showAllImagesModal(testCaseName, images, status) {
             this.style.boxShadow = 'none';
         });
         
-        // Add loading indicator
+        // Add loading indicator and better error handling
         if (img) {
             img.addEventListener('load', function() {
                 console.log(`[DEBUG] Image ${index + 1} loaded successfully`);
                 this.style.opacity = '1';
+                this.style.border = '1px solid #e0e0e0';
             });
             
             img.addEventListener('error', function() {
-                console.error(`[DEBUG] Image ${index + 1} failed to load:`, imgSrc);
-                this.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjE1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNiIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkltYWdlIE5vdCBGb3VuZDwvdGV4dD48L3N2Zz4=';
-                this.alt = '❌ Image not found';
+                console.error(`[DEBUG] Image ${index + 1} failed to load:`, this.src);
+                
+                // For HTML files, show a better error placeholder
+                if (type === 'html') {
+                    this.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjE1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjVmN2ZhIi8+PHRleHQgeD0iNTAlIiB5PSI0MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxOCIgZmlsbD0iIzZiNzI4MCIgdGV4dC1hbmNob3I9Im1pZGRsZSI+5LiN5a2Y5LqG5L2/55SoPC90ZXh0Pjx0ZXh0IHg9IjUwJSIgeT0iNjAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM5Y2E5YWYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkhUTUwg5LiA5Liq5paH5Lu2PC90ZXh0Pjwvc3ZnPg==';
+                    this.alt = '❌ HTML Preview ไม่สามารถโหลดได้';
+                } else {
+                    this.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjE1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNiIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkltYWdlIE5vdCBGb3VuZDwvdGV4dD48L3N2Zz4=';
+                    this.alt = '❌ Image not found';
+                }
+                
+                // Add error styling
+                this.style.border = '2px solid #ff6b6b';
+                this.style.background = '#fff5f5';
             });
             
             // Set initial opacity for loading effect
             img.style.opacity = '0.7';
+            img.style.transition = 'opacity 0.3s ease';
         }
     });
     
@@ -1953,7 +2045,7 @@ function tryUpgradeToLightGallery(modal) {
         
         galleryItems.forEach((item, index) => {
             const imgSrc = item.getAttribute('data-src');
-            const fileName = imgSrc.split('/').pop();
+            const fileName = imgSrc ? imgSrc.split('/').pop() : `Item ${index + 1}`;
             const type = (item.getAttribute('data-type') || '').toLowerCase();
 
             if (type === 'html') {
@@ -2285,6 +2377,93 @@ function checkAndOpenRobotReport(timestamp) {
         });
 }
 window.checkAndOpenRobotReport = checkAndOpenRobotReport;
+
+// Function to refresh thumbnails in all currently open modals
+function refreshAllModalThumbnails() {
+    // Refresh thumbnails in the currently open modal
+    const detailModal = document.getElementById('detailModal');
+    const allImagesModal = document.getElementById('allImagesModal');
+    
+    if (detailModal && detailModal.style.display === 'block') {
+        // Refresh thumbnails in detail modal
+        refreshThumbnailsInModal(detailModal);
+    }
+    
+    if (allImagesModal && allImagesModal.style.display === 'block') {
+        // Refresh thumbnails in all images modal
+        refreshThumbnailsInModal(allImagesModal);
+    }
+}
+
+// Function to refresh thumbnails in modal when window regains focus
+function refreshThumbnailsInModal(modal) {
+    try {
+        console.log('[DEBUG] Refreshing thumbnails in modal');
+        
+        // Find all img elements that might be loading or failed to load
+        const thumbnailImages = modal.querySelectorAll('img[src*="evidence_thumbnail"]');
+        let refreshCount = 0;
+        
+        thumbnailImages.forEach((img, index) => {
+            // Check if image is loading, failed to load, or appears stuck
+            const isLoading = !img.complete;
+            const isFailedOrEmpty = img.complete && (img.naturalHeight === 0 || img.naturalWidth === 0);
+            const isVisible = img.offsetParent !== null; // Only refresh visible images
+            
+            if ((isLoading || isFailedOrEmpty) && isVisible) {
+                console.log(`[DEBUG] Refreshing thumbnail ${index}: ${img.src}`);
+                refreshCount++;
+                
+                // Force reload by adding cache buster
+                const originalSrc = img.src.split('?')[0]; // Remove any existing cache busters
+                const cacheBuster = `?_refresh=${Date.now()}_${index}`;
+                
+                // Set loading state with smooth transition
+                img.style.transition = 'opacity 0.3s ease, filter 0.3s ease';
+                img.style.opacity = '0.6';
+                img.style.filter = 'blur(1px)';
+                
+                // Reload image
+                img.onload = function() {
+                    console.log(`[DEBUG] Thumbnail ${index} reloaded successfully`);
+                    this.style.opacity = '1';
+                    this.style.filter = 'none';
+                    this.onload = null;
+                    this.onerror = null;
+                    
+                    // Remove transition after animation
+                    setTimeout(() => {
+                        this.style.transition = '';
+                    }, 300);
+                };
+                
+                img.onerror = function() {
+                    console.warn(`[DEBUG] Thumbnail ${index} failed to reload`);
+                    this.style.opacity = '1';
+                    this.style.filter = 'none';
+                    this.onload = null;
+                    this.onerror = null;
+                    
+                    // Remove transition after animation
+                    setTimeout(() => {
+                        this.style.transition = '';
+                    }, 300);
+                };
+                
+                img.src = originalSrc + cacheBuster;
+            }
+        });
+        
+        if (refreshCount > 0) {
+            console.log(`[DEBUG] Refreshed ${refreshCount} thumbnails`);
+        } else {
+            console.log('[DEBUG] No thumbnails needed refreshing');
+        }
+        
+    } catch (error) {
+        console.error('[DEBUG] Error refreshing thumbnails:', error);
+    }
+}
 window.downloadAllPDFsForRun = downloadAllPDFsForRun;
 
 // Function to download all PDFs for a specific run as ZIP (for History tab)
