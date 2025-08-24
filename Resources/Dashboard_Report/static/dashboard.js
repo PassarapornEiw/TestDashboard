@@ -503,7 +503,7 @@ function renderTimestampAccordion() {
             statusText = 'PASS';
         } else if (run.status === 'not_run') {
             statusClass = 'status-not-run';
-            statusText = 'NOT RUN';
+            statusText = 'UNKNOWN';
         } else if (run.status === 'failed_blocker') {
             statusClass = 'status-failed-blocker';
             statusText = 'FAIL (Blocker)';
@@ -559,7 +559,7 @@ function renderTimestampAccordion() {
                     featureStatusText = 'PASS';
                 } else if (feature.status === 'not_run') {
                     featureStatusClass = 'status-not-run';
-                    featureStatusText = 'NOT RUN';
+                    featureStatusText = 'UNKNOWN';
                 } else if (feature.status === 'failed_blocker') {
                     featureStatusClass = 'status-failed-blocker';
                     featureStatusText = 'FAIL (Blocker)';
@@ -668,7 +668,7 @@ function renderFeatureAccordion() {
             latestStatusText = 'PASS';
         } else if (latestRun.status === 'not_run') {
             latestStatusClass = 'status-not-run';
-            latestStatusText = 'NOT RUN';
+            latestStatusText = 'UNKNOWN';
         } else if (latestRun.status === 'failed_blocker') {
             latestStatusClass = 'status-failed-blocker';
             latestStatusText = 'FAIL (Blocker)';
@@ -714,7 +714,7 @@ function renderFeatureAccordion() {
                 featureStatusText = 'PASS';
             } else if (featureRun.status === 'not_run') {
                 featureStatusClass = 'status-not-run';
-                featureStatusText = 'NOT RUN';
+                featureStatusText = 'UNKNOWN';
             } else if (featureRun.status === 'failed_blocker') {
                 featureStatusClass = 'status-failed-blocker';
                 featureStatusText = 'FAIL (Blocker)';
@@ -819,7 +819,7 @@ async function viewFeatureDetailsInRun(runIndex, featureIndex) {
         statusText = 'PASS';
     } else if (feature.status === 'not_run') {
         statusClass = 'status-not-run';
-        statusText = 'NOT RUN';
+        statusText = 'UNKNOWN';
     } else if (feature.status === 'failed_blocker') {
         statusClass = 'status-failed-blocker';
         statusText = 'FAIL (Blocker)';
@@ -1078,7 +1078,7 @@ async function generateTestCaseGallery(feature, testCaseDetails, galleryId) {
             // Default to major for legacy 'fail' status
             statusBadge = '<span class="status-badge test-case-badge status-failed-major">FAIL (Major)</span>';
         } else {
-            statusBadge = '<span class="status-badge test-case-badge status-not-run">NOT RUN</span>';
+            statusBadge = '<span class="status-badge test-case-badge status-not-run">UNKNOWN</span>';
         }
         
         // Get test case description, fail description (always read), and expected result from Excel data
@@ -1245,13 +1245,10 @@ async function generateTestCaseGallery(feature, testCaseDetails, galleryId) {
                     ${expectedResult ? `<div class="info-row"><span class="info-label">Expected Result:</span> <div class="info-content">${expectedResult}</div></div>` : ''}
                 </div>
 
-                ${(() => { 
-                    const content = (failDescription && failDescription.trim() !== '' ? failDescription : '-'); 
-                    const errorTitle = status === 'fail (blocker)' ? '🚫 Blocker Failure:' : 
-                                     status === 'fail (major)' ? '⚠️ Major Failure:' : 
-                                     status === 'fail' ? '❌ Failure:' : '';
-                    return errorTitle ? `<div class=\"test-case-error\"><div class=\"test-case-error-title\">${errorTitle}</div><div class=\"error-content\">${content}</div></div>` : '';
-                })()}
+                <div class="test-case-error">
+                    <div class="test-case-error-title">Fail Description:</div>
+                    <div class="error-content">${failDescription && failDescription.trim() !== '' ? failDescription : '-'}</div>
+                </div>
                 
                 ${screenshotGalleryHtml}
             </div>
@@ -1559,13 +1556,13 @@ function renderLatestRunInfo() {
     }).filter(Boolean);
     // Badge for test result
     // Map new statuses to text and classes
-    let status = 'NOT RUN';
+    let status = 'UNKNOWN';
     let statusClass = 'status-not-run';
     if (currentData.status === 'passed') {
         status = 'PASS';
         statusClass = 'status-passed';
     } else if (currentData.status === 'not_run') {
-        status = 'NOT RUN';
+        status = 'UNKNOWN';
         statusClass = 'status-not-run';
     } else if (currentData.status === 'failed_blocker') {
         status = 'FAILED (Blocker)';
@@ -1945,7 +1942,7 @@ function showAllImagesModal(testCaseName, images, status, actualFolderName = nul
     
     const statusBadge = status === 'pass' ? '<span class="status-badge status-passed">PASS</span>' :
                          status === 'fail' ? '<span class="status-badge status-failed">FAIL</span>' :
-                         '<span class="status-badge status-not-run">NOT RUN</span>';
+                         '<span class="status-badge status-not-run">UNKNOWN</span>';
     
     // Create simple gallery HTML without complex attributes initially
     const galleryHTML = images.map((rawPath, index) => {

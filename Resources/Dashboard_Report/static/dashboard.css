@@ -765,7 +765,7 @@ td .btn-container * {
     background: #ffebee;
     border-radius: 8px;
     border-left: 3px solid #dc3545;
-    white-space: pre-wrap; /* รองรับ line breaks และ <br> tags */
+    //white-space: pre-wrap; /* รองรับ line breaks และ <br> tags */
     word-wrap: break-word; /* รองรับการขึ้นบรรทัดใหม่สำหรับข้อความยาว */
 }
 
@@ -815,6 +815,9 @@ td .btn-container * {
     color: #721c24;
 }
 
+/* ปรับขนาดของช่อง Fail Description ใน New Layout ตามเนื้อหา */
+
+
 .test-case-header-new .test-case-error-title {
     font-weight: 600;
     color: #721c24;
@@ -826,6 +829,7 @@ td .btn-container * {
     word-wrap: break-word; /* รองรับการขึ้นบรรทัดใหม่สำหรับข้อความยาว */
     margin-top: 5px;
     line-height: 1.5; /* เพิ่ม line height เพื่อให้อ่านง่ายขึ้น */
+    min-height: 1.2em; /* ปรับความสูงตามเนื้อหาในแนวแกน Y */
 }
 
 .test-case-title-row {
