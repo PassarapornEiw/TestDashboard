@@ -54,7 +54,7 @@ try:
     PLAYWRIGHT_AVAILABLE = True
     print("✅ Playwright available for HTML thumbnail generation")
 except Exception as e:
-    print("⚠️ Warning: Playwright not available. HTML thumbnail generation disabled.")
+    print("⚠️ Warning: Playwright not available. HTML thumbnail generatio   cn disabled.")
     print(f"   To enable: pip install playwright && playwright install chromium")
     PLAYWRIGHT_AVAILABLE = False
 
@@ -544,6 +544,10 @@ def parse_excel_data(excel_path):
         executable_df = filter_executed_rows(df)
         try:
             print(f"[DEBUG][Execute Filter] execute_col={execute_column} before={len(df)} after={len(executable_df)}")
+            # Debug the raw status values before processing
+            if status_column and status_column in executable_df.columns:
+                raw_statuses = executable_df[status_column].fillna('').astype(str).tolist()
+                print(f"[DEBUG][Raw Status Values] raw_statuses={raw_statuses}")
         except Exception:
             pass
 
@@ -555,21 +559,52 @@ def parse_excel_data(excel_path):
         # Handle potential empty cells in status column gracefully
         executable_df = executable_df.copy()
         if status_column in executable_df.columns:
-            executable_df[status_column] = executable_df[status_column].fillna('')
-            status_lower = safe_str_lower(executable_df[status_column])
+            executable_df[status_column] = executable_df[status_column].fillna('').astype(str)
+            # Normalize common variants before lowering
+            # Examples that should be treated as major: 'Failed', 'FAILED', 'Failed (Major)', 'FAIL(Major)'
+            normalized_series = executable_df[status_column].str.strip()
+            normalized_series = normalized_series.replace({
+                r"^failed$": "fail",
+                r"^FAILED$": "fail",
+                r"^Failed$": "fail",
+                r"^fail\s*\(\s*major\s*\)$": "fail (major)",
+                r"^failed\s*\(\s*major\s*\)$": "fail (major)",
+                r"^FAIL\s*\(\s*MAJOR\s*\)$": "fail (major)",
+                r"^fail\s*\(\s*blocker\s*\)$": "fail (blocker)",
+                r"^failed\s*\(\s*blocker\s*\)$": "fail (blocker)",
+                r"^FAIL\s*\(\s*BLOCKER\s*\)$": "fail (blocker)",
+                r"^FAIL\s*MAJOR$": "fail (major)",
+                r"^FAIL\s*BLOCKER$": "fail (blocker)",
+                r"^FAIL\(MAJOR\)$": "fail (major)",
+                r"^FAIL\(BLOCKER\)$": "fail (blocker)"
+            }, regex=True)
+            status_lower = safe_str_lower(normalized_series)
         else:
             status_lower = pd.Series(dtype=str)
         
         # Only count tests that have Execute = 'Y' AND TestResult is either 'pass' or 'fail'
         # Tests with empty/null/other status values should not be counted in total
+        # Count passed and failed tests (including Major and Blocker)
         pass_mask = status_lower == 'pass'
-        fail_mask = status_lower == 'fail'
+        fail_major_mask = status_lower == 'fail (major)'
+        fail_blocker_mask = status_lower == 'fail (blocker)'
+        fail_legacy_mask = status_lower == 'fail'  # Legacy 'fail' status
+        
+        # Combine all failure types
+        fail_mask = fail_major_mask | fail_blocker_mask | fail_legacy_mask
         
         passed = int(pass_mask.sum())
-        failed = int(fail_mask.sum())
+        failed_major = int(fail_major_mask.sum()) + int(fail_legacy_mask.sum())  # Legacy 'fail' counts as Major
+        failed_blocker = int(fail_blocker_mask.sum())
+        failed = failed_major + failed_blocker
         total = passed + failed
         try:
             print(f"[DEBUG][Status Count] status_col={status_column} total={total} passed={passed} failed={failed}")
+            print(f"[DEBUG][Detailed Count] fail_major_exact={int(fail_major_mask.sum())} fail_legacy_exact={int(fail_legacy_mask.sum())} fail_blocker_exact={int(fail_blocker_mask.sum())}")
+            print(f"[DEBUG][Final Count] failed_major={failed_major} failed_blocker={failed_blocker}")
+            # Show actual status values for debugging
+            unique_statuses = status_lower.unique() if not status_lower.empty else []
+            print(f"[DEBUG][Status Values] unique_statuses={list(unique_statuses)}")
         except Exception:
             pass
         
@@ -581,7 +616,11 @@ def parse_excel_data(excel_path):
         elif failed == 0:
             status = "passed"   # All valid tests passed
         else:
-            status = "failed"   # Some valid tests failed
+            # Determine specific failure type
+            if failed_blocker > 0:
+                status = "failed_blocker"   # Has blocker failures
+            else:
+                status = "failed_major"     # Has major failures only
         
         # Find associated evidence files recursively in the feature directory and subdirectories
         excel_dir = excel_path_obj.parent  # This should be the feature folder (e.g., Transfer/)
@@ -659,6 +698,8 @@ def parse_excel_data(excel_path):
             "total": total,
             "passed": passed,
             "failed": failed,
+            "failed_major": failed_major,
+            "failed_blocker": failed_blocker,
             "pass_rate": round(pass_rate, 2),
             "status": status,
             "run_timestamp": run_timestamp,
@@ -1956,7 +1997,11 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
                                     else:
                                         # If PIL not available, create text placeholder
                                         elements.append(Paragraph(f"<b>HTML File:</b> {filename}", normal_style))
-                                        elements.append(Paragraph("(HTML preview not available - PIL/Pillow required)", caption_style))
+                                        # Use caption_style if defined above, otherwise fallback to normal_style
+                                        try:
+                                            elements.append(Paragraph("(HTML preview not available)", caption_style))
+                                        except Exception:
+                                            elements.append(Paragraph("(HTML preview not available)", normal_style))
                                         elements.append(Spacer(1, 10))
                                         continue
                             else:
@@ -2305,7 +2350,7 @@ def generate_optimized_test_case_pdf(test_case_id, feature_name, run_timestamp, 
                                 else:
                                     # If PIL not available, create text placeholder
                                     elements.append(Paragraph(f"<b>HTML File:</b> {file_path.split('/')[-1]}", normal_style))
-                                    elements.append(Paragraph("(HTML preview not available)", caption_style))
+                                    elements.append(Paragraph("(HTML preview not available)", normal_style))
                                     elements.append(Spacer(1, 10))
                                     continue
                         else:

@@ -115,7 +115,7 @@ const timestampHeader = `
     <tr>
         <th style="width: 20%; text-align: left;">Run Timestamp</th>
         <th style="width: 12%; text-align: center;">Status</th>
-        <th style="width: 25%; text-align: center;">Summary (Total) Passed/Failed</th>
+        <th style="width: 25%; text-align: center;">Summary (Total) Passed/Failed Major/Failed Blocker</th>
         <th style="width: 12%; text-align: center;">Pass Rate</th>
         <th style="width: 31%; text-align: center;">Reports & Actions</th>
     </tr>
@@ -284,29 +284,57 @@ async function loadDashboardData() {
         
         // Update to use new API structure
         testData = data.runs || [];
-        
+
         // Calculate currentData from the latest run (first in sorted array)
         if (testData.length > 0) {
             const latestRun = testData[0];
+
+            // Aggregate counts across features for latest run
+            const aggTotal = latestRun.features.reduce((sum, f) => sum + (f.total || 0), 0);
+            const aggPassed = latestRun.features.reduce((sum, f) => sum + (f.passed || 0), 0);
+            const aggFailed = latestRun.features.reduce((sum, f) => sum + (f.failed || 0), 0);
+            const aggFailedMajor = latestRun.features.reduce((sum, f) => sum + (f.failed_major || 0), 0);
+            const aggFailedBlocker = latestRun.features.reduce((sum, f) => sum + (f.failed_blocker || 0), 0);
+
             currentData = {
-                total: latestRun.features.reduce((sum, f) => sum + (f.total || 0), 0),
-                passed: latestRun.features.reduce((sum, f) => sum + (f.passed || 0), 0),
-                failed: latestRun.features.reduce((sum, f) => sum + (f.failed || 0), 0),
+                total: aggTotal,
+                passed: aggPassed,
+                failed: aggFailed,
+                failed_major: aggFailedMajor,
+                failed_blocker: aggFailedBlocker,
                 timestamp: latestRun.timestamp,
                 features: latestRun.features
             };
-            
+
             // Calculate overall status and pass rate
             currentData.pass_rate = currentData.total > 0 ? parseFloat(((currentData.passed / currentData.total) * 100).toFixed(2)) : 0;
-            currentData.status = currentData.failed > 0 ? 'failed' : (currentData.total > 0 ? 'passed' : 'not_run');
-            
+            if (currentData.total === 0) {
+                currentData.status = 'not_run';
+            } else if ((currentData.failed_blocker || 0) > 0) {
+                currentData.status = 'failed_blocker';
+            } else if ((currentData.failed_major || 0) > 0 || (currentData.failed || 0) > 0) {
+                currentData.status = 'failed_major';
+            } else {
+                currentData.status = 'passed';
+            }
+
             // Add calculated fields to each run for compatibility
             testData.forEach(run => {
                 run.total = run.features.reduce((sum, f) => sum + (f.total || 0), 0);
                 run.passed = run.features.reduce((sum, f) => sum + (f.passed || 0), 0);
-                run.failed = run.features.reduce((sum, f) => sum + (f.failed || 0), 0);
+                run.failed_major = run.features.reduce((sum, f) => sum + (f.failed_major || 0), 0);
+                run.failed_blocker = run.features.reduce((sum, f) => sum + (f.failed_blocker || 0), 0);
+                run.failed = run.features.reduce((sum, f) => sum + (f.failed || ((f.failed_major || 0) + (f.failed_blocker || 0))), 0);
                 run.pass_rate = run.total > 0 ? parseFloat(((run.passed / run.total) * 100).toFixed(2)) : 0;
-                run.status = run.failed > 0 ? 'failed' : (run.total > 0 ? 'passed' : 'not_run');
+                if (run.total === 0) {
+                    run.status = 'not_run';
+                } else if ((run.failed_blocker || 0) > 0) {
+                    run.status = 'failed_blocker';
+                } else if ((run.failed_major || 0) > 0 || (run.failed || 0) > 0) {
+                    run.status = 'failed_major';
+                } else {
+                    run.status = 'passed';
+                }
             });
         } else {
             currentData = null;
@@ -335,10 +363,10 @@ function initializePieChart() {
     pieChart = new Chart(ctx, {
         type: 'pie',
         data: {
-            labels: ['Passed', 'Failed'],
+            labels: ['Passed', 'FAIL (Major)', 'FAIL (Blocker)'],
             datasets: [{
-                data: [0, 0],
-                backgroundColor: ['#28a745', '#dc3545'],
+                data: [0, 0, 0],
+                backgroundColor: ['#28a745', '#ff5722', '#e51c23'],
                 borderWidth: 2,
                 borderColor: '#fff'
             }]
@@ -410,10 +438,11 @@ function showEmptyState(message = null) {
         `;
     }
     
-    // Clear summary cards
+    // Clear summary cards for all 5 cards
     document.getElementById('total-tests').textContent = '0';
     document.getElementById('passed-tests').textContent = '0';
-    document.getElementById('failed-tests').textContent = '0';
+    document.getElementById('failed-major-tests').textContent = '0';
+    document.getElementById('failed-blocker-tests').textContent = '0';
     document.getElementById('pass-rate').textContent = '0%';
 }
 
@@ -423,7 +452,13 @@ function updateSummaryCards() {
     
     document.getElementById('total-tests').textContent = currentData.total || 0;
     document.getElementById('passed-tests').textContent = currentData.passed || 0;
-    document.getElementById('failed-tests').textContent = currentData.failed || 0;
+    
+    // Separate failed major and blocker into different cards
+    const failedMajor = currentData.failed_major || 0;
+    const failedBlocker = currentData.failed_blocker || 0;
+    
+    document.getElementById('failed-major-tests').textContent = failedMajor;
+    document.getElementById('failed-blocker-tests').textContent = failedBlocker;
     
     const passRate = currentData.pass_rate || currentData.passRate || 0;
     document.getElementById('pass-rate').textContent = passRate.toFixed(2) + '%';
@@ -434,9 +469,14 @@ function updatePieChart() {
     if (!currentData || !pieChart) return;
     
     const passed = currentData.passed || 0;
-    const failed = currentData.failed || 0;
+    const failedMajor = currentData.failed_major || 0;
+    const failedBlocker = currentData.failed_blocker || 0;
     
-    pieChart.data.datasets[0].data = [passed, failed];
+    // Update chart data for 3 statuses
+    pieChart.data.labels = ['Passed', 'FAIL (Major)', 'FAIL (Blocker)'];
+    pieChart.data.datasets[0].data = [passed, failedMajor, failedBlocker];
+    pieChart.data.datasets[0].backgroundColor = ['#28a745', '#ff5722', '#e51c23'];
+    
     pieChart.update();
 }
 
@@ -456,10 +496,31 @@ function renderTimestampAccordion() {
     
     let html = '';
     testData.forEach((run, runIndex) => {
-        const statusClass = run.status === 'passed' ? 'status-passed' : 
-                           run.status === 'not_run' ? 'status-not-run' : 'status-failed';
-        const statusText = run.status === 'passed' ? 'PASSED' : 
-                          run.status === 'not_run' ? 'NOT RUN' : 'FAILED';
+        // Determine status class and text based on failure types
+        let statusClass, statusText;
+        if (run.status === 'passed') {
+            statusClass = 'status-passed';
+            statusText = 'PASS';
+        } else if (run.status === 'not_run') {
+            statusClass = 'status-not-run';
+            statusText = 'NOT RUN';
+        } else if (run.status === 'failed_blocker') {
+            statusClass = 'status-failed-blocker';
+            statusText = 'FAIL (Blocker)';
+        } else if (run.status === 'failed_major') {
+            statusClass = 'status-failed-major';
+            statusText = 'FAIL (Major)';
+        } else {
+            // Fallback for legacy 'failed' status
+            const hasBlocker = run.features && run.features.some(f => f.failed_blocker > 0);
+            if (hasBlocker) {
+                statusClass = 'status-failed-blocker';
+                statusText = 'FAIL (Blocker)';
+            } else {
+                statusClass = 'status-failed-major';
+                statusText = 'FAIL (Major)';
+            }
+        }
         const passRate = run.pass_rate || run.passRate || 0;
         const cleanTimestamp = run.timestamp.trim(); // Remove any leading/trailing whitespace
 
@@ -471,7 +532,7 @@ function renderTimestampAccordion() {
             <tr class="accordion-header" data-run-index="${runIndex}">
                 <td style="text-align: left;"><span class="chevron">▶</span>${formatTimestamp(cleanTimestamp)}</td>
                 <td style="text-align: center;"><span class="status-badge ${statusClass}">${statusText}</span></td>
-                <td style="text-align: center; font-weight: bold;">(<span style="color: #8B4513;">${run.total}</span>) <span style="color: #28a745;">${run.passed}</span>/<span style="color: #dc3545;">${run.failed}</span></td>
+                <td style="text-align: center; font-weight: bold;">(<span style="color: #8B4513;">${run.total}</span>) <span style="color: #28a745;">${run.passed}</span>/<span style="color: #ff5722;">${run.failed_major || 0}</span>/<span style="color: #e51c23;">${run.failed_blocker || 0}</span></td>
                 <td style="text-align: center; font-weight: bold;">${passRate.toFixed(2)}%</td>
                         <td style="text-align: center; white-space: nowrap;">
             <button class="btn btn-primary" onclick="event.stopPropagation(); downloadAllPDFsForRun('${cleanTimestamp}', ${runIndex})" style="margin-right: 8px; display: inline-block;">📄 Download PDF</button>
@@ -486,21 +547,42 @@ function renderTimestampAccordion() {
             html += `<table class="sub-table"><thead><tr>
                         <th style="text-align: left;">Feature Name</th>
                         <th style="text-align: center;">Status</th>
-                        <th style="text-align: center;">Summary (Total) Passed/Failed</th>
+                        <th style="text-align: center;">Summary (Total) Passed/Failed Major/Failed Blocker</th>
                         <th style="text-align: center;">Pass Rate</th>
                         <th style="text-align: center;">Actions</th>
                     </tr></thead><tbody>`;
             run.features.forEach((feature, featureIndex) => {
-                const featureStatusClass = feature.status === 'passed' ? 'status-passed' : 
-                                          feature.status === 'not_run' ? 'status-not-run' : 'status-failed';
-                const featureStatusText = feature.status === 'passed' ? 'PASSED' : 
-                                         feature.status === 'not_run' ? 'NOT RUN' : 'FAILED';
+                // Determine feature status class and text based on failure types
+                let featureStatusClass, featureStatusText;
+                if (feature.status === 'passed') {
+                    featureStatusClass = 'status-passed';
+                    featureStatusText = 'PASS';
+                } else if (feature.status === 'not_run') {
+                    featureStatusClass = 'status-not-run';
+                    featureStatusText = 'NOT RUN';
+                } else if (feature.status === 'failed_blocker') {
+                    featureStatusClass = 'status-failed-blocker';
+                    featureStatusText = 'FAIL (Blocker)';
+                } else if (feature.status === 'failed_major') {
+                    featureStatusClass = 'status-failed-major';
+                    featureStatusText = 'FAIL (Major)';
+                } else {
+                    // Fallback for legacy 'failed' status
+                    if (feature.failed_blocker > 0) {
+                        featureStatusClass = 'status-failed-blocker';
+                        featureStatusText = 'FAIL (Blocker)';
+                    } else {
+                        featureStatusClass = 'status-failed-major';
+                        featureStatusText = 'FAIL (Major)';
+                    }
+                }
+                
                 const featurePassRate = feature.total > 0 ? ((feature.passed / feature.total) * 100).toFixed(2) : 0;
                 html += `
                     <tr>
                         <td style="text-align: left;">${feature.feature_name}</td>
                         <td style="text-align: center;"><span class="status-badge ${featureStatusClass}">${featureStatusText}</span></td>
-                        <td style="text-align: center; font-weight: bold;">(<span style="color: #8B4513;">${feature.total}</span>) <span style="color: #28a745;">${feature.passed}</span>/<span style="color: #dc3545;">${feature.failed}</span></td>
+                        <td style="text-align: center; font-weight: bold;">(<span style="color: #8B4513;">${feature.total}</span>) <span style="color: #28a745;">${feature.passed}</span>/<span style="color: #ff5722;">${feature.failed_major || 0}</span>/<span style="color: #e51c23;">${feature.failed_blocker || 0}</span></td>
                         <td style="text-align: center; font-weight: bold;">${featurePassRate}%</td>
                         <td style="text-align: center;">
                             <button class="btn btn-primary" onclick="event.stopPropagation(); viewFeatureDetailsInRunAsync(${runIndex}, ${featureIndex})">
@@ -579,10 +661,30 @@ function renderFeatureAccordion() {
     let html = '';
     Object.values(features).forEach((feature, featureIndex) => {
         const latestRun = feature.history[0]; // Most recent run for this feature
-        const latestStatusClass = latestRun.status === 'passed' ? 'status-passed' : 
-                                 latestRun.status === 'not_run' ? 'status-not-run' : 'status-failed';
-        const latestStatusText = latestRun.status === 'passed' ? 'PASSED' : 
-                                latestRun.status === 'not_run' ? 'NOT RUN' : 'FAILED';
+        // Determine latest status class and text based on failure types
+        let latestStatusClass, latestStatusText;
+        if (latestRun.status === 'passed') {
+            latestStatusClass = 'status-passed';
+            latestStatusText = 'PASS';
+        } else if (latestRun.status === 'not_run') {
+            latestStatusClass = 'status-not-run';
+            latestStatusText = 'NOT RUN';
+        } else if (latestRun.status === 'failed_blocker') {
+            latestStatusClass = 'status-failed-blocker';
+            latestStatusText = 'FAIL (Blocker)';
+        } else if (latestRun.status === 'failed_major') {
+            latestStatusClass = 'status-failed-major';
+            latestStatusText = 'FAIL (Major)';
+        } else {
+            // Fallback for legacy 'failed' status
+            if (latestRun.failed_blocker > 0) {
+                latestStatusClass = 'status-failed-blocker';
+                latestStatusText = 'FAIL (Blocker)';
+            } else {
+                latestStatusClass = 'status-failed-major';
+                latestStatusText = 'FAIL (Major)';
+            }
+        }
         
         // Parent Row
         html += `
@@ -599,22 +701,43 @@ function renderFeatureAccordion() {
                     <table class="sub-table"><thead><tr>
                         <th style="text-align: left;">Run Timestamp</th>
                         <th style="text-align: center;">Status</th>
-                        <th style="text-align: center;">Summary (Total) Passed/Failed</th>
+                        <th style="text-align: center;">Summary (Total) Passed/Failed Major/Failed Blocker</th>
                         <th style="text-align: center;">Pass Rate</th>
                         <th style="text-align: center;">Actions</th>
                     </tr></thead><tbody>`;
         
         feature.history.forEach(featureRun => {
-            const featureStatusClass = featureRun.status === 'passed' ? 'status-passed' : 
-                                      featureRun.status === 'not_run' ? 'status-not-run' : 'status-failed';
-            const featureStatusText = featureRun.status === 'passed' ? 'PASSED' : 
-                                     featureRun.status === 'not_run' ? 'NOT RUN' : 'FAILED';
+            // Determine feature run status class and text based on failure types
+            let featureStatusClass, featureStatusText;
+            if (featureRun.status === 'passed') {
+                featureStatusClass = 'status-passed';
+                featureStatusText = 'PASS';
+            } else if (featureRun.status === 'not_run') {
+                featureStatusClass = 'status-not-run';
+                featureStatusText = 'NOT RUN';
+            } else if (featureRun.status === 'failed_blocker') {
+                featureStatusClass = 'status-failed-blocker';
+                featureStatusText = 'FAIL (Blocker)';
+            } else if (featureRun.status === 'failed_major') {
+                featureStatusClass = 'status-failed-major';
+                featureStatusText = 'FAIL (Major)';
+            } else {
+                // Fallback for legacy 'failed' status
+                if (featureRun.failed_blocker > 0) {
+                    featureStatusClass = 'status-failed-blocker';
+                    featureStatusText = 'FAIL (Blocker)';
+                } else {
+                    featureStatusClass = 'status-failed-major';
+                    featureStatusText = 'FAIL (Major)';
+                }
+            }
+            
             const featureRunPassRate = featureRun.total > 0 ? ((featureRun.passed / featureRun.total) * 100).toFixed(2) : 0;
             html += `
                 <tr>
                     <td style="text-align: left;">${formatTimestamp(featureRun.timestamp)}</td>
                     <td style="text-align: center;"><span class="status-badge ${featureStatusClass}">${featureStatusText}</span></td>
-                    <td style="text-align: center; font-weight: bold;">(<span style="color: #8B4513;">${featureRun.total}</span>) <span style="color: #28a745;">${featureRun.passed}</span>/<span style="color: #dc3545;">${featureRun.failed}</span></td>
+                    <td style="text-align: center; font-weight: bold;">(<span style="color: #8B4513;">${featureRun.total}</span>) <span style="color: #28a745;">${featureRun.passed}</span>/<span style="color: #ff5722;">${featureRun.failed_major || 0}</span>/<span style="color: #e51c23;">${featureRun.failed_blocker || 0}</span></td>
                     <td style="text-align: center; font-weight: bold;">${featureRunPassRate}%</td>
                     <td style="text-align: center;">
                         <button class="btn btn-primary" onclick="viewFeatureDetailsInRunAsync(${featureRun.runIndex}, ${featureRun.featureIndex})">
@@ -688,10 +811,31 @@ async function viewFeatureDetailsInRun(runIndex, featureIndex) {
     modalTitle.textContent = `Feature Details: ${feature.feature_name} (${formatTimestamp(run.timestamp)})`;
     
     const passRate = feature.total > 0 ? ((feature.passed / feature.total) * 100).toFixed(2) : 0;
-    const statusClass = feature.status === 'passed' ? 'status-passed' : 
-                       feature.status === 'not_run' ? 'status-not-run' : 'status-failed';
-    const statusText = feature.status === 'passed' ? 'PASSED' : 
-                      feature.status === 'not_run' ? 'NOT RUN' : 'FAILED';
+    
+    // Determine status class and text based on failure types
+    let statusClass, statusText;
+    if (feature.status === 'passed') {
+        statusClass = 'status-passed';
+        statusText = 'PASS';
+    } else if (feature.status === 'not_run') {
+        statusClass = 'status-not-run';
+        statusText = 'NOT RUN';
+    } else if (feature.status === 'failed_blocker') {
+        statusClass = 'status-failed-blocker';
+        statusText = 'FAIL (Blocker)';
+    } else if (feature.status === 'failed_major') {
+        statusClass = 'status-failed-major';
+        statusText = 'FAIL (Major)';
+    } else {
+        // Fallback for legacy 'failed' status
+        if (feature.failed_blocker > 0) {
+            statusClass = 'status-failed-blocker';
+            statusText = 'FAIL (Blocker)';
+        } else {
+            statusClass = 'status-failed-blocker';
+            statusText = 'FAIL (Major)';
+        }
+    }
     
     // --- Gallery ID ---
     const galleryId = `gallery-${runIndex}-${featureIndex}`;
@@ -720,7 +864,8 @@ async function viewFeatureDetailsInRun(runIndex, featureIndex) {
             <div class="feature-stats">
                 <span class="stat-total">📊 Total: <strong>${feature.total}</strong></span>
                 <span class="stat-passed">✅ Passed: <strong>${feature.passed}</strong></span>
-                <span class="stat-failed">❌ Failed: <strong>${feature.failed}</strong></span>
+                <span class="stat-failed-major">⚠️ FAIL (Major): <strong>${feature.failed_major || 0}</strong></span>
+                <span class="stat-failed-blocker">🚫 FAIL (Blocker): <strong>${feature.failed_blocker || 0}</strong></span>
                 <span class="stat-rate">📈 Pass Rate: <strong>${passRate}%</strong></span>
             </div>
         </div>
@@ -924,11 +1069,16 @@ async function generateTestCaseGallery(feature, testCaseDetails, galleryId) {
         const status = testCaseDetail.status;
         let statusBadge = '';
         if (status === 'pass') {
-            statusBadge = '<span class="status-badge test-case-badge status-passed">PASSED</span>';
+            statusBadge = '<span class="status-badge test-case-badge status-passed">PASS</span>';
+        } else if (status === 'fail (major)') {
+            statusBadge = '<span class="status-badge test-case-badge status-failed-major">FAIL (Major)</span>';
+        } else if (status === 'fail (blocker)') {
+            statusBadge = '<span class="status-badge test-case-badge status-failed-blocker">FAIL (Blocker)</span>';
         } else if (status === 'fail') {
-            statusBadge = '<span class="status-badge test-case-badge status-failed">FAILED</span>';
+            // Default to major for legacy 'fail' status
+            statusBadge = '<span class="status-badge test-case-badge status-failed-major">FAIL (Major)</span>';
         } else {
-            statusBadge = '<span class="status-badge test-case-badge" style="background: linear-gradient(135deg, #999 0%, #777 100%); color: white; box-shadow: 0 4px 15px rgba(153, 153, 153, 0.4);">UNKNOWN</span>';
+            statusBadge = '<span class="status-badge test-case-badge status-not-run">NOT RUN</span>';
         }
         
         // Get test case description, fail description (always read), and expected result from Excel data
@@ -1095,7 +1245,13 @@ async function generateTestCaseGallery(feature, testCaseDetails, galleryId) {
                     ${expectedResult ? `<div class="info-row"><span class="info-label">Expected Result:</span> <div class="info-content">${expectedResult}</div></div>` : ''}
                 </div>
 
-                ${(() => { const content = (failDescription && failDescription.trim() !== '' ? failDescription : '-'); return `<div class=\"test-case-error\"><div class=\"test-case-error-title\">❌ Fail Description:</div><div class=\"error-content\">${content}</div></div>`; })()}
+                ${(() => { 
+                    const content = (failDescription && failDescription.trim() !== '' ? failDescription : '-'); 
+                    const errorTitle = status === 'fail (blocker)' ? '🚫 Blocker Failure:' : 
+                                     status === 'fail (major)' ? '⚠️ Major Failure:' : 
+                                     status === 'fail' ? '❌ Failure:' : '';
+                    return errorTitle ? `<div class=\"test-case-error\"><div class=\"test-case-error-title\">${errorTitle}</div><div class=\"error-content\">${content}</div></div>` : '';
+                })()}
                 
                 ${screenshotGalleryHtml}
             </div>
@@ -1338,7 +1494,7 @@ async function downloadAllTestCasesPDF(featureName, runTimestamp, runIndex, feat
         btn.innerHTML = '⏳ Generating ZIP...';
         btn.disabled = true;
 
-        // เรียก API สำหรับสร้าง ZIP file
+        // เรียก API สำหรับสร้าง ZIP file ที่มี PDF ของทุก feature
         const response = await fetch('/api/export_feature_pdfs_zip', {
             method: 'POST',
             headers: {
@@ -1402,12 +1558,22 @@ function renderLatestRunInfo() {
         return `<span class=\"feature-simple-link\" data-feature-idx=\"${idx}\">${name}</span>`;
     }).filter(Boolean);
     // Badge for test result
-    const status = currentData.status === 'passed' ? 'PASSED' : 
-                  currentData.status === 'not_run' ? 'NOT RUN' :
-                  currentData.status === 'failed' ? 'FAILED' : 'UNKNOWN';
-    const statusClass = currentData.status === 'passed' ? 'status-passed' : 
-                       currentData.status === 'not_run' ? 'status-not-run' :
-                       currentData.status === 'failed' ? 'status-failed' : 'status-unknown';
+    // Map new statuses to text and classes
+    let status = 'NOT RUN';
+    let statusClass = 'status-not-run';
+    if (currentData.status === 'passed') {
+        status = 'PASS';
+        statusClass = 'status-passed';
+    } else if (currentData.status === 'not_run') {
+        status = 'NOT RUN';
+        statusClass = 'status-not-run';
+    } else if (currentData.status === 'failed_blocker') {
+        status = 'FAILED (Blocker)';
+        statusClass = 'status-failed-blocker';
+    } else if (currentData.status === 'failed_major' || currentData.status === 'failed') {
+        status = 'FAILED (Major)';
+        statusClass = 'status-failed-major';
+    }
     
     infoDiv.innerHTML = `
         <div class="run-label">Latest Run:</div>
@@ -1777,9 +1943,9 @@ function showAllImagesModal(testCaseName, images, status, actualFolderName = nul
     // Use actualFolderName if provided, otherwise fallback to testCaseName
     const displayName = actualFolderName || testCaseName;
     
-    const statusBadge = status === 'pass' ? '<span class="status-badge status-passed">PASSED</span>' :
-                       status === 'fail' ? '<span class="status-badge status-failed">FAILED</span>' :
-                       '<span class="status-badge" style="background: #999; color: white;">UNKNOWN</span>';
+    const statusBadge = status === 'pass' ? '<span class="status-badge status-passed">PASS</span>' :
+                         status === 'fail' ? '<span class="status-badge status-failed">FAIL</span>' :
+                         '<span class="status-badge status-not-run">NOT RUN</span>';
     
     // Create simple gallery HTML without complex attributes initially
     const galleryHTML = images.map((rawPath, index) => {
