@@ -2,19 +2,24 @@
 
 ## 1. Latest Test Result (Section 1) - Technical Details
 
-### 1.1 Summary Cards Implementation
+### 1.1 Summary Cards Implementation (5 Cards)
 ```javascript
-// Summary cards update logic
+// Summary cards update logic - Updated for 5 cards with new colors
 function updateSummaryCards() {
-    const total = testData.length;
-    const passed = testData.filter(tc => tc.status === 'PASS').length;
-    const failed = testData.filter(tc => tc.status === 'FAIL').length;
-    const passRate = total > 0 ? Math.round((passed / total) * 100) : 0;
+    if (!currentData) return;
     
-    document.getElementById('total-tests').textContent = total;
-    document.getElementById('passed-tests').textContent = passed;
-    document.getElementById('failed-tests').textContent = failed;
-    document.getElementById('pass-rate').textContent = passRate + '%';
+    document.getElementById('total-tests').textContent = currentData.total || 0;
+    document.getElementById('passed-tests').textContent = currentData.passed || 0;
+    
+    // Separate failed major and blocker into different cards
+    const failedMajor = currentData.failed_major || 0;
+    const failedBlocker = currentData.failed_blocker || 0;
+    
+    document.getElementById('failed-major-tests').textContent = failedMajor;
+    document.getElementById('failed-blocker-tests').textContent = failedBlocker;
+    
+    const passRate = currentData.pass_rate || currentData.passRate || 0;
+    document.getElementById('pass-rate').textContent = passRate.toFixed(2) + '%';
 }
 ```
 
@@ -23,6 +28,13 @@ function updateSummaryCards() {
 2. `updateSummaryCards()` คำนวณสถิติจาก `testData`
 3. อัปเดต DOM elements ด้วยข้อมูลที่คำนวณได้
 
+**5 Summary Cards:**
+- **Total Executed**: จำนวน test cases ทั้งหมด
+- **Passed**: จำนวน test cases ที่ผ่าน
+- **FAIL (Major)**: จำนวน test cases ที่ล้มเหลวระดับ Major
+- **FAIL (Blocker)**: จำนวน test cases ที่ล้มเหลวระดับ Blocker
+- **Pass Rate**: อัตราการผ่านเป็นเปอร์เซ็นต์
+
 ### 1.2 Pie Chart Implementation
 ```javascript
 function initializePieChart() {
@@ -30,10 +42,10 @@ function initializePieChart() {
     pieChart = new Chart(ctx, {
         type: 'pie',
         data: {
-            labels: ['Passed', 'Failed'],
+            labels: ['Passed', 'FAIL (Major)', 'FAIL (Blocker)'],
             datasets: [{
-                data: [0, 0],
-                backgroundColor: ['#28a745', '#dc3545']
+                data: [0, 0, 0],
+                backgroundColor: ['#28a745', '#ff5722', '#e51c23']
             }]
         },
         options: {
@@ -42,12 +54,31 @@ function initializePieChart() {
         }
     });
 }
+
+// Updated pie chart data update function
+function updatePieChart() {
+    if (!currentData || !pieChart) return;
+    
+    const passed = currentData.passed || 0;
+    const failedMajor = currentData.failed_major || 0;
+    const failedBlocker = currentData.failed_blocker || 0;
+    
+    // Update chart data for 3 statuses
+    pieChart.data.labels = ['Passed', 'FAIL (Major)', 'FAIL (Blocker)'];
+    pieChart.data.datasets[0].data = [passed, failedMajor, failedBlocker];
+    pieChart.data.datasets[0].backgroundColor = ['#28a745', '#ff5722', '#e51c23'];
+    
+    pieChart.update();
+}
 ```
 
 **Chart.js Integration:**
 - ใช้ CDN: `https://cdn.jsdelivr.net/npm/chart.js`
 - Responsive design รองรับการปรับขนาด
-- Custom colors สำหรับ Pass/Fail status
+- Custom colors สำหรับ 3 statuses:
+  - Pass: #28a745 (เขียว)
+  - FAIL Major: #ff5722 (ส้ม)
+  - FAIL Blocker: #e51c23 (แดง)
 
 ### 1.3 Latest Run Information
 ```javascript
@@ -75,7 +106,9 @@ function renderLatestRunInfo() {
             "name": "Payment",
             "total": 5,
             "passed": 4,
-            "failed": 1
+            "failed_major": 1,
+            "failed_blocker": 0,
+            "status": "failed_major"
         }
     ]
 }
@@ -153,18 +186,22 @@ function renderTimestampAccordion() {
 **Accordion Structure:**
 ```html
 <tr class="accordion-header" data-run-index="0">
-    <td colspan="4">
+    <td colspan="5">
         <span class="chevron">▶</span>
         <strong>2025-05-16 16:11:32</strong>
         <span class="status-badge status-passed">PASS</span>
     </td>
 </tr>
 <tr class="accordion-body" data-run-index="0">
-    <td colspan="4">
+    <td colspan="5">
         <!-- Feature details -->
     </td>
 </tr>
 ```
+
+**Updated Column Headers:**
+- **Timestamp Tab**: "Summary (Total) Passed/Failed Major/Failed Blocker"
+- **Feature Tab**: "Summary (Total) Passed/Failed Major/Failed Blocker"
 
 ---
 
@@ -175,750 +212,386 @@ function renderTimestampAccordion() {
 <div id="featureModal" class="modal">
     <div class="modal-content">
         <div class="modal-header">
-            <h2>Feature Details</h2>
+            <h2>Feature Details: ${featureName}</h2>
             <span class="close">&times;</span>
         </div>
         <div class="modal-body">
-            <!-- Dynamic content -->
+            <!-- Test case details with updated status badges -->
         </div>
     </div>
 </div>
 ```
 
-**Modal Management:**
+### 3.2 Status Badge Implementation
 ```javascript
-function viewFeatureDetailsInRun(runIndex, featureIndex) {
-    const run = currentData[runIndex];
-    const feature = run.features[featureIndex];
-    
-    // Populate modal content
-    populateModalContent(feature, run.timestamp);
-    
-    // Show modal
-    document.getElementById('featureModal').style.display = 'block';
-}
-```
-
-### 3.2 Test Case Information Display
-```javascript
-function createTestCaseRow(testCase, featureName, runTimestamp) {
-    return `
-        <div class="test-case-header">
-            <div class="test-case-title-group">
-                <h3 class="test-case-title">${testCase.id}</h3>
-                <button class="test-case-pdf-btn" 
-                        onclick="exportTestCasePDF('${testCase.id}', '${featureName}', '${runTimestamp}')">
-                    📄 PDF
-                </button>
-            </div>
-            <div class="test-case-description">${testCase.description || 'No description'}</div>
-            <div class="status-badge test-case-badge status-${testCase.status.toLowerCase()}">
-                ${testCase.status}
-            </div>
-        </div>
-    `;
-}
-```
-
-**Data Binding:**
-- Test Case ID และ Description จาก Excel data
-- Status badge แสดงผลตามสถานะจริง
-- PDF download button สำหรับแต่ละ Test Case
-
----
-
-## 4. Excel Preview - Technical Details
-
-### 4.1 Excel Data Parsing
-```python
-def parse_excel_data(excel_path):
-    """Parse Excel file and extract test case information"""
-    try:
-        df = pd.read_excel(excel_path, sheet_name=0)
-        
-        # Find relevant columns
-        headers = [str(h).strip() for h in df.columns]
-        id_col = find_first_column(headers, ['ID', 'Test Case ID', 'TC ID'])
-        desc_col = find_first_column(headers, ['Description', 'Desc', 'Test Description'])
-        status_col = find_first_column(headers, ['Status', 'Result', 'Test Result'])
-        
-        # Filter executed rows
-        executed_df = filter_executed_rows(df)
-        
-        return {
-            'headers': headers,
-            'data': executed_df.to_dict('records'),
-            'id_column': id_col,
-            'description_column': desc_col,
-            'status_column': status_col
-        }
-    except Exception as e:
-        return {'error': str(e)}
-```
-
-**Column Detection Logic:**
-```python
-def find_first_column(headers, candidates):
-    """Find the first matching column from candidates"""
-    for candidate in candidates:
-        for header in headers:
-            if candidate.lower() in header.lower():
-                return header
-    return None
-```
-
-### 4.2 Excel Preview Display
-```javascript
-async function previewExcel(excelPath, targetElementId) {
-    try {
-        const response = await fetch(`/api/excel_preview?path=${encodeURIComponent(excelPath)}`);
-        const data = await response.json();
-        
-        if (data.error) {
-            throw new Error(data.error);
-        }
-        
-        renderExcelTable(data, targetElementId);
-    } catch (error) {
-        console.error('Error previewing Excel:', error);
-        showError(`Failed to load Excel preview: ${error.message}`);
+// Status badge generation with new colors and text
+function generateStatusBadge(status) {
+    switch(status) {
+        case 'pass':
+            return '<span class="status-badge status-passed">PASS</span>';
+        case 'fail (major)':
+            return '<span class="status-badge status-failed-major">FAIL (Major)</span>';
+        case 'fail (blocker)':
+            return '<span class="status-badge status-failed-blocker">FAIL (Blocker)</span>';
+        default:
+            return '<span class="status-badge status-not-run">NOT RUN</span>';
     }
 }
 ```
 
-**Table Rendering:**
-```javascript
-function renderExcelTable(excelData, targetElementId) {
-    const container = document.getElementById(targetElementId);
-    
-    let tableHTML = '<table class="excel-preview-table">';
-    
-    // Headers
-    tableHTML += '<thead><tr>';
-    excelData.headers.forEach(header => {
-        tableHTML += `<th>${header}</th>`;
-    });
-    tableHTML += '</tr></thead>';
-    
-    // Data rows
-    tableHTML += '<tbody>';
-    excelData.data.forEach(row => {
-        tableHTML += '<tr>';
-        excelData.headers.forEach(header => {
-            const value = row[header] || '';
-            tableHTML += `<td>${formatTextWithLineBreaks(value)}</td>`;
-        });
-        tableHTML += '</tr>';
-    });
-    tableHTML += '</tbody></table>';
-    
-    container.innerHTML = tableHTML;
-}
-```
-
 ---
 
-## 5. PDF Download - Technical Details
+## 4. Status Priority System - Technical Implementation
 
-### 5.1 PDF Generation Backend
+### 4.1 Backend Status Logic (Python)
 ```python
-@app.route('/api/export_pdf', methods=['POST'])
-def export_pdf():
-    """Generate PDF for entire run"""
-    try:
-        data = request.get_json()
-        timestamp = data.get('timestamp')
-        
-        # Find run data
-        run_data = find_run_by_timestamp(timestamp)
-        if not run_data:
-            return jsonify({'error': 'Run not found'}), 404
-        
-        # Generate PDF
-        pdf_buffer = generate_run_pdf(run_data)
-        
-        # Return PDF file
-        return send_file(
-            io.BytesIO(pdf_buffer),
-            mimetype='application/pdf',
-            as_attachment=True,
-            download_name=f'Test_Report_{timestamp}.pdf'
-        )
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-```
-
-**PDF Generation Process:**
-1. รับ timestamp จาก frontend
-2. ค้นหาข้อมูลการรัน
-3. สร้าง PDF content
-4. ส่งไฟล์กลับไปยัง frontend
-
-### 5.2 PDF Content Generation
-```python
-def generate_run_pdf(run_data):
-    """Generate PDF content for a test run"""
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
-    
-    # Setup fonts
-    setup_thai_fonts()
-    
-    # Build content
-    story = []
-    
-    # Title
-    title_style = getSampleStyleSheet()['Title']
-    title_style.fontName = PDF_FONT_BOLD
-    story.append(Paragraph(f"Test Run Report - {run_data['timestamp']}", title_style))
-    story.append(Spacer(1, 20))
-    
-    # Summary table
-    summary_data = create_summary_table(run_data)
-    summary_table = Table(summary_data)
-    story.append(summary_table)
-    
-    # Build PDF
-    doc.build(story)
-    
-    buffer.seek(0)
-    return buffer.getvalue()
-```
-
-**Font Management:**
-```python
-def setup_thai_fonts():
-    """Setup Thai fonts for PDF generation"""
-    try:
-        # Try Unicode CID fonts first
-        if setup_unicode_cid_fonts():
-            return True
-        
-        # Fallback to local TTF fonts
-        font_dir = SERVER_DIR / "fonts"
-        if font_dir.exists():
-            for ttf_file in font_dir.glob("*.ttf"):
-                register_font(ttf_file)
-            return True
-            
-    except Exception as e:
-        print(f"Font setup failed: {e}")
-        return False
-```
-
----
-
-## 6. Gallery Modal - Technical Details
-
-### 6.1 Gallery Structure
-```javascript
-function showAllImagesModal(testCaseName, images, status, actualFolderName = null) {
-    const modal = document.getElementById('allImagesModal');
-    const gallery = document.getElementById('allImagesGallery');
-    
-    // Clear previous content
-    gallery.innerHTML = '';
-    
-    // Add images to gallery
-    images.forEach((imagePath, index) => {
-        const galleryItem = createGalleryItem(imagePath, index, testCaseName);
-        gallery.appendChild(galleryItem);
-    });
-    
-    // Update modal title
-    const title = modal.querySelector('.modal-header h2');
-    title.textContent = `Evidence for: ${testCaseName}`;
-    
-    // Show modal
-    modal.style.display = 'block';
-    
-    // Initialize lightgallery
-    initializeLightGallery(gallery);
-}
-```
-
-**Gallery Item Creation:**
-```javascript
-function createGalleryItem(imagePath, index, testCaseName) {
-    const item = document.createElement('div');
-    item.className = 'gallery-item';
-    item.innerHTML = `
-        <img src="${imagePath}" alt="Evidence ${index + 1}" 
-             data-src="${imagePath}" data-sub-html="${testCaseName}">
-        <div class="gallery-item-info">
-            <span>Evidence ${index + 1}</span>
-        </div>
-    `;
-    return item;
-}
-```
-
-### 6.2 LightGallery Integration
-```javascript
-function initializeLightGallery(galleryElement) {
-    if (activeGallery) {
-        activeGallery.destroy();
-    }
-    
-    activeGallery = lightGallery(galleryElement, {
-        selector: 'img',
-        download: true,
-        counter: true,
-        enableDrag: true,
-        enableSwipe: true,
-        fullScreen: true,
-        zoom: true,
-        plugins: [lgZoom, lgFullscreen]
-    });
-}
-```
-
-**LightGallery Configuration:**
-- **Selector**: ใช้ `img` elements
-- **Download**: เปิดใช้งานการดาวน์โหลด
-- **Counter**: แสดงจำนวนภาพ
-- **Zoom**: รองรับการซูม
-- **Fullscreen**: รองรับการแสดงผลเต็มหน้าจอ
-
----
-
-## 7. Thumbnail Generation - Technical Details
-
-### 7.1 HTML Thumbnail Generation
-```python
-def _html_to_thumbnail(html_abs_path: Path, thumb_abs_path: Path = None, 
-                       width: int = 800, height: int = 450):
-    """Generate thumbnail from HTML file using Playwright"""
-    if not PLAYWRIGHT_AVAILABLE:
-        return False
-    
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page(viewport={'width': width, 'height': height})
-            
-            # Load HTML file
-            page.goto(f"file://{html_abs_path}")
-            
-            # Wait for content to load
-            page.wait_for_timeout(1000)
-            
-            # Take screenshot
-            screenshot = page.screenshot(
-                type='png',
-                full_page=False,
-                clip={'x': 0, 'y': 0, 'width': width, 'height': height}
-            )
-            
-            # Save thumbnail
-            if thumb_abs_path:
-                thumb_abs_path.parent.mkdir(parents=True, exist_ok=True)
-                thumb_abs_path.write_bytes(screenshot)
-            
-            browser.close()
-            return True
-            
-    except Exception as e:
-        print(f"HTML thumbnail generation failed: {e}")
-        return False
-```
-
-**Playwright Configuration:**
-- Headless mode สำหรับ server environment
-- Custom viewport size
-- Wait for content loading
-- Screenshot capture
-
-### 7.2 Evidence Thumbnail Generation
-```python
-def _create_evidence_thumbnail(image_path: Path, thumb_path: Path, 
-                              max_width: int = 200, max_height: int = 150):
-    """Create thumbnail from evidence image"""
-    if not PIL_AVAILABLE:
-        return False
-    
-    try:
-        with PILImage.open(image_path) as img:
-            # Calculate thumbnail size
-            img.thumbnail((max_width, max_height), PILImage.Resampling.LANCZOS)
-            
-            # Save thumbnail
-            thumb_path.parent.mkdir(parents=True, exist_ok=True)
-            img.save(thumb_path, 'PNG', optimize=True)
-            
-            return True
-            
-    except Exception as e:
-        print(f"Evidence thumbnail generation failed: {e}")
-        return False
-```
-
-**PIL Configuration:**
-- LANCZOS resampling สำหรับคุณภาพที่ดี
-- Optimize PNG output
-- Maintain aspect ratio
-
----
-
-## 8. Performance Optimization - Technical Details
-
-### 8.1 Thumbnail Caching Strategy
-```python
-def _ensure_thumbnail_dir(html_path: Path = None) -> Path:
-    """Ensure thumbnail directory exists and return path"""
-    if html_path:
-        # Create thumbnail path based on HTML file location
-        thumb_dir = html_path.parent / "thumbnails"
+# Status determination with priority system
+if total == 0:
+    status = "not_run"  # No tests were executed
+elif failed == 0:
+    status = "passed"   # All valid tests passed
+else:
+    # Determine specific failure type with priority
+    if failed_blocker > 0:
+        status = "failed_blocker"   # Has blocker failures - PRIORITY HIGHEST
     else:
-        # Use default thumbnail directory
-        thumb_dir = SERVER_DIR / "thumbnails"
-    
-    thumb_dir.mkdir(parents=True, exist_ok=True)
-    return thumb_dir
+        status = "failed_major"     # Has major failures only
 ```
 
-**Cache Management:**
-- Thumbnail ถูกสร้างในโฟลเดอร์ `thumbnails`
-- ใช้ path-based naming convention
-- Automatic cleanup ของ thumbnail เก่า
-
-### 8.2 Lazy Loading Implementation
+### 4.2 Frontend Status Logic (JavaScript)
 ```javascript
-async function prefetchEvidenceThumbnails(imagePaths) {
-    // Prefetch thumbnails for better performance
-    const thumbnailPromises = imagePaths.map(async (imagePath) => {
-        try {
-            const response = await fetch(`/api/evidence_thumbnail?path=${encodeURIComponent(imagePath)}`);
-            if (response.ok) {
-                return await response.blob();
-            }
-        } catch (error) {
-            console.warn('Failed to prefetch thumbnail:', error);
+// Run level status determination
+if (run.total === 0) {
+    run.status = 'not_run';
+} else if ((run.failed_blocker || 0) > 0) {
+    run.status = 'failed_blocker';        // PRIORITY HIGHEST
+} else if ((run.failed_major || 0) > 0 || (run.failed || 0) > 0) {
+    run.status = 'failed_major';          // PRIORITY SECOND
+} else {
+    run.status = 'passed';
+}
+
+// Feature level status determination
+if (feature.failed_blocker > 0) {
+    featureStatusClass = 'status-failed-blocker';    // PRIORITY HIGHEST
+    featureStatusText = 'FAIL (Blocker)';
+} else {
+    featureStatusClass = 'status-failed-major';      // PRIORITY SECOND
+    featureStatusText = 'FAIL (Major)';
+}
+```
+
+### 4.3 Status Priority Order
+1. **FAIL (Blocker)** - Priority สูงสุด (สีแดง #e51c23)
+2. **FAIL (Major)** - Priority ที่สอง (สีส้ม #ff5722)
+3. **PASS** - Priority ที่สาม (สีเขียว #28a745)
+4. **UNKNOWN** - Priority ต่ำสุด (สีเทา #6c757d)
+
+---
+
+## 5. CSS Implementation - Status Badge Colors
+
+### 5.1 Status Badge CSS Classes
+```css
+/* PASS Status Badge - Green */
+.status-badge.status-passed {
+    background: linear-gradient(135deg, #28a745 0%, #20a23a 100%);
+    color: white;
+    font-weight: 600;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+    box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
+}
+
+/* FAIL (Major) Status Badge - Orange */
+.status-badge.status-failed-major {
+    background: linear-gradient(135deg, #ff5722 0%, #f4511e 100%);
+    color: white;
+    font-weight: 600;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+    box-shadow: 0 4px 15px rgba(255, 87, 34, 0.4);
+}
+
+/* FAIL (Blocker) Status Badge - Red */
+.status-badge.status-failed-blocker {
+    background: linear-gradient(135deg, #e51c23 0%, #c62828 100%);
+    color: white;
+    font-weight: 600;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+    box-shadow: 0 4px 15px rgba(229, 28, 35, 0.4);
+}
+
+/* NOT RUN Status Badge */
+.status-badge.status-not-run {
+    background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%);
+    color: white;
+    font-weight: 600;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+    box-shadow: 0 4px 15px rgba(108, 117, 125, 0.4);
+}
+```
+
+### 5.2 Summary Card CSS
+```css
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+}
+
+.summary-card.failed-major .card-icon {
+    background: linear-gradient(135deg, #ff5722, #f4511e);
+}
+
+.summary-card.failed-blocker .card-icon {
+    background: linear-gradient(135deg, #e51c23, #c62828);
+}
+```
+
+---
+
+## 6. Data Display Format
+
+### 6.1 Summary Table Format
+```javascript
+// Summary table with new color scheme
+<td style="text-align: center; font-weight: bold;">
+    (<span style="color: #8B4513;">${total}</span>) 
+    <span style="color: #28a745;">${passed}</span>/
+    <span style="color: #ff5722;">${failed_major || 0}</span>/
+    <span style="color: #e51c23;">${failed_blocker || 0}</span>
+</td>
+```
+
+**Color Scheme:**
+- **Total**: สีน้ำตาล #8B4513
+- **Passed**: สีเขียว #28a745
+- **Failed Major**: สีส้ม #ff5722
+- **Failed Blocker**: สีแดง #e51c23
+
+### 6.2 Status Badge Text Format
+- **PASS**: แสดงเป็น "PASS"
+- **FAIL (Major)**: แสดงเป็น "FAIL (Major)"
+- **FAIL (Blocker)**: แสดงเป็น "FAIL (Blocker)"
+- **UNKNOWN**: แสดงเป็น "UNKNOWN"
+
+---
+
+## 7. Responsive Design Implementation
+
+### 7.1 Mobile-First Approach
+```css
+@media (max-width: 768px) {
+    .summary-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 15px;
+    }
+}
+
+@media (max-width: 480px) {
+    .summary-grid {
+        grid-template-columns: 1fr;
+        gap: 15px;
+    }
+    
+    .summary-card {
+        padding: 20px;
+    }
+    
+    .card-icon {
+        font-size: 2rem;
+        width: 50px;
+        height: 50px;
+    }
+}
+```
+
+### 7.2 Table Responsiveness
+```css
+.table-container {
+    overflow-x: auto;
+    border-radius: 10px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+.sub-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+```
+
+---
+
+## 8. Performance Optimization
+
+### 8.1 Thumbnail Caching
+```javascript
+// Thumbnail cache management
+function prefetchEvidenceThumbnails(imagePaths) {
+    imagePaths.forEach(path => {
+        if (!thumbnailCache.has(path)) {
+            // Preload thumbnail
+            const img = new Image();
+            img.src = path;
+            thumbnailCache.set(path, img);
         }
     });
-    
-    await Promise.allSettled(thumbnailPromises);
 }
 ```
 
-**Prefetching Strategy:**
-- โหลด thumbnail ล่วงหน้า
-- ใช้ Promise.allSettled สำหรับ error handling
-- ไม่ block UI thread
-
----
-
-## 9. Error Handling - Technical Details
-
-### 9.1 Frontend Error Handling
+### 8.2 Lazy Loading
 ```javascript
-function showError(message, duration = 5000) {
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'error-message';
-    errorDiv.textContent = message;
+// Lazy load feature details
+async function viewFeatureDetailsInRunAsync(runIndex, featureIndex) {
+    if (featureDetailsCache.has(`${runIndex}-${featureIndex}`)) {
+        return featureDetailsCache.get(`${runIndex}-${featureIndex}`);
+    }
     
-    document.body.appendChild(errorDiv);
+    // Load and cache feature details
+    const details = await loadFeatureDetails(runIndex, featureIndex);
+    featureDetailsCache.set(`${runIndex}-${featureIndex}`, details);
+    return details;
+}
+```
+
+---
+
+## 9. Error Handling and Validation
+
+### 9.1 Status Validation
+```javascript
+// Validate status priority logic
+function validateStatusPriority(features) {
+    let hasBlocker = false;
+    let hasMajor = false;
     
-    // Auto-remove after duration
-    setTimeout(() => {
-        if (errorDiv.parentNode) {
-            errorDiv.parentNode.removeChild(errorDiv);
+    features.forEach(feature => {
+        if (feature.failed_blocker > 0) hasBlocker = true;
+        if (feature.failed_major > 0) hasMajor = true;
+    });
+    
+    // Priority validation
+    if (hasBlocker && hasMajor) {
+        console.log('Status Priority: FAIL (Blocker) takes precedence over FAIL (Major)');
+    }
+    
+    return { hasBlocker, hasMajor };
+}
+```
+
+### 9.2 Data Integrity Checks
+```javascript
+// Check data consistency
+function validateFeatureData(feature) {
+    const total = feature.total || 0;
+    const passed = feature.passed || 0;
+    const failedMajor = feature.failed_major || 0;
+    const failedBlocker = feature.failed_blocker || 0;
+    
+    const calculatedTotal = passed + failedMajor + failedBlocker;
+    
+    if (total !== calculatedTotal) {
+        console.warn(`Data inconsistency in feature ${feature.feature_name}: total=${total}, calculated=${calculatedTotal}`);
+    }
+    
+    return total === calculatedTotal;
+}
+```
+
+---
+
+## 10. Testing and Validation
+
+### 10.1 Status Priority Testing
+```javascript
+// Test status priority logic
+function testStatusPriority() {
+    const testCases = [
+        { failed_major: 1, failed_blocker: 0, expected: 'failed_major' },
+        { failed_major: 0, failed_blocker: 1, expected: 'failed_blocker' },
+        { failed_major: 1, failed_blocker: 1, expected: 'failed_blocker' },
+        { failed_major: 0, failed_blocker: 0, expected: 'passed' }
+    ];
+    
+    testCases.forEach(testCase => {
+        const result = determineStatus(testCase);
+        console.assert(result === testCase.expected, 
+            `Expected ${testCase.expected}, got ${result}`);
+    });
+}
+```
+
+### 10.2 Color Scheme Testing
+```javascript
+// Test color scheme consistency
+function testColorScheme() {
+    const expectedColors = {
+        'status-passed': '#28a745',
+        'status-failed-major': '#ff5722',
+        'status-failed-blocker': '#e51c23',
+        'status-not-run': '#6c757d'
+    };
+    
+    Object.entries(expectedColors).forEach(([className, expectedColor]) => {
+        const element = document.querySelector(`.${className}`);
+        if (element) {
+            const computedColor = getComputedStyle(element).backgroundColor;
+            console.log(`${className}: ${computedColor} (expected: ${expectedColor})`);
         }
-    }, duration);
-}
-```
-
-**Error Display:**
-- Temporary error messages
-- Auto-dismissal
-- Non-blocking user experience
-
-### 9.2 Backend Error Handling
-```python
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({'error': 'Resource not found'}), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({'error': 'Internal server error'}), 500
-
-@app.errorhandler(Exception)
-def handle_exception(e):
-    # Log the error
-    print(f"Unhandled exception: {e}")
-    return jsonify({'error': 'An unexpected error occurred'}), 500
-```
-
-**Error Response Format:**
-```json
-{
-    "error": "Error message description",
-    "details": "Additional error details (optional)"
+    });
 }
 ```
 
 ---
 
-## 10. Security Implementation - Technical Details
+## 11. Future Enhancements
 
-### 10.1 File Path Validation
-```python
-def sanitize_filename(name: str, replacement: str = "_") -> str:
-    """Sanitize filename to prevent path traversal attacks"""
-    # Remove or replace dangerous characters
-    dangerous_chars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|']
-    for char in dangerous_chars:
-        name = name.replace(char, replacement)
-    
-    # Limit length
-    if len(name) > 255:
-        name = name[:255]
-    
-    return name
+### 11.1 Dynamic Color Scheme
+```javascript
+// Future: Dynamic color scheme management
+const COLOR_SCHEMES = {
+    default: {
+        pass: '#28a745',
+        failed_major: '#ff5722',
+        failed_blocker: '#e51c23',
+        not_run: '#6c757d'
+    },
+    high_contrast: {
+        pass: '#00ff00',
+        failed_major: '#ff8000',
+        failed_blocker: '#ff0000',
+        not_run: '#808080'
+    }
+};
+
+function applyColorScheme(schemeName) {
+    const scheme = COLOR_SCHEMES[schemeName];
+    // Apply color scheme dynamically
+}
 ```
 
-**Security Measures:**
-- Path traversal prevention
-- Filename sanitization
-- Length limitation
-
-### 10.2 Directory Access Control
-```python
-def is_safe_path(path: Path, base_dir: Path) -> bool:
-    """Check if path is within safe base directory"""
-    try:
-        path = path.resolve()
-        base_dir = base_dir.resolve()
-        return path.is_relative_to(base_dir)
-    except ValueError:
-        return False
+### 11.2 Status Customization
+```javascript
+// Future: Custom status definitions
+const CUSTOM_STATUSES = [
+    { name: 'FAIL (Critical)', priority: 1, color: '#8B0000' },
+    { name: 'FAIL (Blocker)', priority: 2, color: '#e51c23' },
+    { name: 'FAIL (Major)', priority: 3, color: '#ff5722' },
+    { name: 'FAIL (Minor)', priority: 4, color: '#ff9800' },
+    { name: 'PASS', priority: 5, color: '#28a745' }
+];
 ```
-
-**Access Control:**
-- Restrict file access to results directory
-- Path validation
-- Directory traversal prevention
 
 ---
 
-## 11. Configuration Management - Technical Details
+## 12. Conclusion
 
-### 11.1 Environment Configuration
-```python
-# Configuration constants
-SERVER_DIR = Path(__file__).parent.resolve()
-PROJECT_ROOT = SERVER_DIR.parent.parent
-RESULTS_DIR = PROJECT_ROOT / "results"
+Dashboard Report ได้รับการอัพเดตให้รองรับ:
 
-# Font configuration
-PDF_FONT_NORMAL = 'Helvetica'
-PDF_FONT_BOLD = 'Helvetica-Bold'
+1. **5 Summary Cards** แทน 4 cards เดิม
+2. **Status Priority System** ที่ให้ FAIL (Blocker) priority สูงสุด
+3. **Updated Color Scheme** ที่ใช้สีใหม่ตาม specification
+4. **Consistent Status Display** ในทุกส่วนของระบบ
+5. **Responsive Design** ที่รองรับการแสดงผลบนอุปกรณ์ทุกขนาด
 
-# Thumbnail configuration
-THUMBNAIL_WIDTH = 800
-THUMBNAIL_HEIGHT = 450
-EVIDENCE_THUMBNAIL_WIDTH = 200
-EVIDENCE_THUMBNAIL_HEIGHT = 150
-```
-
-**Configuration Structure:**
-- Path-based configuration
-- Font settings
-- Thumbnail dimensions
-- Feature flags
-
-### 11.2 Feature Detection
-```python
-# Check for required dependencies
-REPORTLAB_AVAILABLE = True if 'reportlab' in sys.modules else False
-MATPLOTLIB_AVAILABLE = True if 'matplotlib' in sys.modules else False
-PIL_AVAILABLE = True if 'PIL' in sys.modules else False
-PLAYWRIGHT_AVAILABLE = True if 'playwright' in sys.modules else False
-
-# Set capability flags
-THUMBNAIL_CAPABLE = PIL_AVAILABLE or PLAYWRIGHT_AVAILABLE
-PDF_CAPABLE = REPORTLAB_AVAILABLE
-```
-
-**Capability Management:**
-- Dynamic feature detection
-- Graceful degradation
-- User notification
-
----
-
-## 12. Testing Strategy - Technical Details
-
-### 12.1 Unit Test Structure
-```python
-def test_excel_parsing():
-    """Test Excel data parsing functionality"""
-    test_file = "test_data.xlsx"
-    result = parse_excel_data(test_file)
-    
-    assert 'headers' in result
-    assert 'data' in result
-    assert len(result['data']) > 0
-
-def test_pdf_generation():
-    """Test PDF generation functionality"""
-    test_data = create_test_run_data()
-    pdf_buffer = generate_run_pdf(test_data)
-    
-    assert len(pdf_buffer) > 0
-    assert pdf_buffer.startswith(b'%PDF')
-```
-
-**Test Coverage:**
-- Excel parsing
-- PDF generation
-- Thumbnail creation
-- API endpoints
-
-### 12.2 Integration Test Structure
-```python
-def test_end_to_end_workflow():
-    """Test complete workflow from data loading to PDF generation"""
-    # Load test data
-    data = load_test_data()
-    
-    # Generate thumbnails
-    thumbnails = generate_thumbnails(data)
-    
-    # Create PDF
-    pdf = generate_pdf(data, thumbnails)
-    
-    # Verify results
-    assert pdf is not None
-    assert len(thumbnails) > 0
-```
-
-**Integration Testing:**
-- End-to-end workflows
-- Component interaction
-- Performance testing
-
----
-
-## 13. Monitoring and Logging - Technical Details
-
-### 13.1 Performance Monitoring
-```python
-import time
-import logging
-
-def monitor_performance(func):
-    """Decorator to monitor function performance"""
-    def wrapper(*args, **kwargs):
-        start_time = time.time()
-        result = func(*args, **kwargs)
-        end_time = time.time()
-        
-        execution_time = end_time - start_time
-        logging.info(f"{func.__name__} executed in {execution_time:.2f} seconds")
-        
-        return result
-    return wrapper
-```
-
-**Monitoring Features:**
-- Function execution time
-- Memory usage tracking
-- Error rate monitoring
-
-### 13.2 Logging Configuration
-```python
-import logging
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('dashboard.log'),
-        logging.StreamHandler()
-    ]
-)
-
-logger = logging.getLogger(__name__)
-```
-
-**Logging Levels:**
-- INFO: General operations
-- WARNING: Non-critical issues
-- ERROR: Critical failures
-- DEBUG: Detailed debugging information
-
----
-
-## 14. Deployment Considerations - Technical Details
-
-### 14.1 Production Deployment
-```python
-# Production configuration
-if os.environ.get('FLASK_ENV') == 'production':
-    app.config['DEBUG'] = False
-    app.config['TESTING'] = False
-    
-    # Enable production logging
-    logging.getLogger('werkzeug').setLevel(logging.ERROR)
-    
-    # Production error handling
-    @app.errorhandler(Exception)
-    def handle_exception(e):
-        logger.error(f"Unhandled exception: {e}")
-        return jsonify({'error': 'Internal server error'}), 500
-```
-
-**Production Features:**
-- Disabled debug mode
-- Enhanced error handling
-- Production logging
-- Security hardening
-
-### 14.2 Docker Configuration
-```dockerfile
-FROM python:3.9-slim
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    chromium \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-# Install Playwright
-RUN playwright install chromium
-
-# Copy application
-COPY . /app
-WORKDIR /app
-
-# Expose port
-EXPOSE 5000
-
-# Run application
-CMD ["python", "dashboard_server.py"]
-```
-
-**Docker Features:**
-- Chromium installation
-- Playwright setup
-- Port exposure
-- Volume mounting
-
----
-
-## 15. Conclusion
-
-เอกสาร Technical Specification นี้ครอบคลุมรายละเอียดการทำงานของทุกส่วนใน Dashboard Report ระบบได้รับการออกแบบให้มีความยืดหยุ่น ประสิทธิภาพ และความปลอดภัย โดยใช้เทคโนโลยีที่ทันสมัยและเหมาะสมสำหรับการใช้งานจริง
-
-**Key Technical Highlights:**
-- **Modular Architecture**: แยกส่วนการทำงานเป็นโมดูลที่ชัดเจน
-- **Performance Optimization**: ใช้ caching และ lazy loading
-- **Security**: ป้องกัน path traversal และ file access
-- **Scalability**: รองรับการขยายระบบในอนาคต
-- **Maintainability**: โค้ดที่อ่านง่ายและบำรุงรักษาได้
+ระบบมีความเสถียรและรองรับการขยายตัวในอนาคต โดยมีการจัดการ priority และสีที่ชัดเจนและสอดคล้องกัน

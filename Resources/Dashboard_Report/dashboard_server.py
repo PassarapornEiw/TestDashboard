@@ -66,6 +66,12 @@ if not THUMBNAIL_CAPABLE:
 else:
     print("✅ Thumbnail generation capability available")
 
+# --- Chrome Path Configuration for Playwright ---
+# ตั้งค่า Playwright browsers path ให้ชี้ไปที่ chrome-win ที่มีอยู่แล้ว
+chrome_path = Path(__file__).resolve().parent / "chrome-win"
+os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(chrome_path))
+print(f"✅ Chrome path configured: {chrome_path}")
+
 app = Flask(__name__)
 
 # --- Configuration ---
@@ -2920,7 +2926,10 @@ def _html_to_thumbnail(html_abs_path: Path, thumb_abs_path: Path = None, width: 
             print(f"[INFO] Attempting Playwright HTML capture...")
             playwright = sync_playwright().start()
             try:
-                browser = playwright.chromium.launch()
+                browser = playwright.chromium.launch(
+                    executable_path=str(chrome_path / "chrome.exe"),
+                    headless=True
+                )
                 page = browser.new_page(viewport={"width": width, "height": height})
 
                 # Build file URI for local HTML
@@ -3182,7 +3191,10 @@ def html_to_image_for_pdf(html_abs_path: Path, width: int = 800, height: int = 6
     try:
         if PLAYWRIGHT_AVAILABLE:
             with sync_playwright() as p:
-                browser = p.chromium.launch()
+                browser = p.chromium.launch(
+                    executable_path=str(chrome_path / "chrome.exe"),
+                    headless=True
+                )
                 
                 # Use larger viewport for better content rendering
                 viewport_width = max(width, 1200)  # Minimum 1200px width

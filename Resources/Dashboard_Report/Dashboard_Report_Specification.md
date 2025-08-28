@@ -17,16 +17,23 @@ Dashboard Report เป็นระบบแสดงผลและจัดก
 **ตำแหน่ง**: ส่วนบนของหน้า Dashboard
 **วัตถุประสงค์**: แสดงผลการทดสอบล่าสุดและสถิติสรุป
 
-#### 2.1.1 Summary Cards
+#### 2.1.1 Summary Cards (5 Cards)
 - **Total Executed**: จำนวน Test Case ทั้งหมดที่รัน
-- **Passed**: จำนวน Test Case ที่ผ่าน
-- **Failed**: จำนวน Test Case ที่ล้มเหลว  
+- **Passed**: จำนวน Test Case ที่ผ่าน (PASS)
+- **FAIL (Major)**: จำนวน Test Case ที่ล้มเหลวระดับ Major
+- **FAIL (Blocker)**: จำนวน Test Case ที่ล้มเหลวระดับ Blocker
 - **Pass Rate**: อัตราการผ่านเป็นเปอร์เซ็นต์
+
+**รองรับ 4 statuses หลัก**:
+- **PASS**: ทดสอบผ่าน (สีเขียว #28a745)
+- **FAIL (Major)**: ล้มเหลวระดับ Major (สีส้ม #ff5722)
+- **FAIL (Blocker)**: ล้มเหลวระดับ Blocker (สีแดง #e51c23)
+- **UNKNOWN**: ไม่ทราบสถานะ (สีเทา #6c757d)
 
 #### 2.1.2 Pie Chart
 - แสดงกราฟวงกลมของผลการทดสอบ
 - ใช้ Chart.js library
-- แสดงสัดส่วน Pass/Fail แบบ Visual
+- แสดงสัดส่วน 3 statuses: Pass (สีเขียว) / FAIL Major (สีส้ม) / FAIL Blocker (สีแดง)
 
 #### 2.1.3 Latest Run Information
 - แสดงข้อมูลการรันล่าสุด
@@ -54,6 +61,7 @@ Dashboard Report เป็นระบบแสดงผลและจัดก
 - แสดงข้อมูลการรันทั้งหมด
 - แสดงสถิติของแต่ละ Feature
 - รองรับการ Expand/Collapse
+- **Column Header**: "Summary (Total) Passed/Failed Major/Failed Blocker"
 
 ---
 
@@ -71,7 +79,8 @@ Dashboard Report เป็นระบบแสดงผลและจัดก
 - Test Case ID และ Description
 - Expected Result
 - Actual Result (ถ้ามี Error)
-- Status Badge (Pass/Fail/Not Run)
+- Status Badge (Pass/FAIL Major/FAIL Blocker/Not Run) 
+- Error Title แสดงระดับความรุนแรงของ Failure
 
 #### 3.1.3 Evidence Display
 - แสดง Screenshot และ Evidence
@@ -192,116 +201,54 @@ Dashboard Report เป็นระบบแสดงผลและจัดก
 ### 7.3 Error Handling
 - แสดงข้อความ Error ที่เหมาะสม
 - Fallback mechanisms
-- User-friendly error messages
 
 ---
 
-## 8. การทำงานของระบบ (System Workflow)
+## 8. Status Priority System
 
-### 8.1 การเริ่มต้นระบบ
-1. โหลดข้อมูลจาก Results directory
-2. สร้าง Thumbnail cache
-3. แสดงผล Dashboard
+### 8.1 Status Priority Order
+ระบบมีการให้ priority ตามลำดับความรุนแรง:
 
-### 8.2 การอัปเดตข้อมูล
-1. อ่านข้อมูลใหม่จาก Results directory
-2. อัปเดต Thumbnail cache
-3. รีเฟรช UI
+1. **FAIL (Blocker)** - Priority สูงสุด (สีแดง #e51c23)
+2. **FAIL (Major)** - Priority ที่สอง (สีส้ม #ff5722)
+3. **PASS** - Priority ที่สาม (สีเขียว #28a745)
+4. **UNKNOWN** - Priority ต่ำสุด (สีเทา #6c757d)
 
-### 8.3 การสร้าง PDF
-1. รับคำขอจาก User
-2. สร้าง PDF content
-3. ส่งไฟล์กลับไปยัง User
+### 8.2 Status Logic
+- **Feature Level**: ถ้ามี test case เป็น blocker จะ stamp เป็น FAIL (Blocker)
+- **Run Level**: ถ้ามี feature ใดๆ เป็น blocker จะ stamp เป็น FAIL (Blocker)
+- **Fallback Logic**: รองรับ legacy status และมีการตรวจสอบ priority ที่ถูกต้อง
 
----
-
-## 9. การจัดการ Performance
-
-### 9.1 Thumbnail Caching
-- สร้าง Thumbnail ไว้ล่วงหน้า
-- ล้าง Cache ตามเวลาที่กำหนด
-- ใช้ Memory และ Disk cache
-
-### 9.2 Lazy Loading
-- โหลดข้อมูลเมื่อจำเป็น
-- ใช้ Pagination สำหรับข้อมูลจำนวนมาก
-- Optimize การโหลด Images
+### 8.3 Status Badge Display
+- **PASS**: แสดงเป็น "PASS"
+- **FAIL (Major)**: แสดงเป็น "FAIL (Major)"
+- **FAIL (Blocker)**: แสดงเป็น "FAIL (Blocker)"
+- **UNKNOWN**: แสดงเป็น "UNKNOWN"
 
 ---
 
-## 10. การรักษาความปลอดภัย (Security)
+## 9. การทดสอบและ Validation
 
-### 10.1 File Access
-- จำกัดการเข้าถึงไฟล์เฉพาะ Results directory
-- Validate file paths
-- Sanitize user inputs
+### 9.1 Status Validation
+- ตรวจสอบ priority ของ status ที่ถูกต้อง
+- ตรวจสอบการแสดงผลสีที่ถูกต้อง
+- ตรวจสอบการแสดงข้อความที่ถูกต้อง
 
-### 10.2 Error Handling
-- ไม่เปิดเผยข้อมูลระบบ
-- Log errors อย่างเหมาะสม
-- User-friendly error messages
-
----
-
-## 11. การติดตั้งและ Deployment
-
-### 11.1 Dependencies
-- Flask (Web framework)
-- ReportLab (PDF generation)
-- Playwright (HTML rendering)
-- PIL/Pillow (Image processing)
-- Pandas (Data processing)
-
-### 11.2 Configuration
-- Font configuration
-- Directory paths
-- Thumbnail settings
+### 9.2 UI Validation
+- ตรวจสอบการแสดงผล 5 cards ใน Section 1
+- ตรวจสอบการแสดงผลสีในตาราง Summary
+- ตรวจสอบการแสดงผลสีใน Pie Chart
 
 ---
 
-## 12. การบำรุงรักษา (Maintenance)
+## 10. การบำรุงรักษาและ Update
 
-### 12.1 Cache Management
-- ล้าง Thumbnail cache ตามกำหนด
-- จัดการ Disk space
-- Monitor performance
+### 10.1 Color Scheme Management
+- สีหลักของระบบสามารถปรับเปลี่ยนได้ง่าย
+- ใช้ CSS variables สำหรับสีหลัก
+- รองรับการปรับเปลี่ยนสีแบบ centralized
 
-### 12.2 Log Management
-- Log การทำงานของระบบ
-- Error logging
-- Performance monitoring
-
----
-
-## 13. การทดสอบ (Testing)
-
-### 13.1 Unit Testing
-- ทดสอบฟังก์ชันหลัก
-- ทดสอบ API endpoints
-- ทดสอบ PDF generation
-
-### 13.2 Integration Testing
-- ทดสอบการทำงานร่วมกันของระบบ
-- ทดสอบการแสดงผล
-- ทดสอบการจัดการข้อมูล
-
----
-
-## 14. การพัฒนาต่อ (Future Development)
-
-### 14.1 Planned Features
-- Real-time updates
-- Advanced filtering
-- Custom report templates
-- Export to other formats
-
-### 14.2 Scalability Improvements
-- Database integration
-- Caching improvements
-- Performance optimization
-
----
-
-## 15. สรุป (Conclusion)
-
-Dashboard Report เป็นระบบที่ครบครันสำหรับการจัดการและแสดงผลข้อมูลการทดสอบอัตโนมัติ โดยมีฟีเจอร์ที่ครอบคลุมตั้งแต่การแสดงผลข้อมูล การสร้างรายงาน การจัดการภาพ และการ Export ข้อมูลในรูปแบบต่างๆ ระบบได้รับการออกแบบให้ใช้งานง่าย มีประสิทธิภาพ และรองรับการใช้งานในสภาพแวดล้อมการทำงานจริง
+### 10.2 Status Management
+- รองรับการเพิ่ม status ใหม่
+- รองรับการปรับเปลี่ยน priority
+- รองรับการปรับเปลี่ยนข้อความแสดงผล
