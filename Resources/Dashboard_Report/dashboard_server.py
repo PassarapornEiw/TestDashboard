@@ -634,14 +634,14 @@ def parse_excel_data(excel_path):
         try:
             # Search for images, HTML, and Excel files in the feature directory and all subdirectories (TC001, TC002, etc.)
             # EXCLUDE .thumbnails directories to prevent duplicates
-            evidence_patterns = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.html", "*.htm", "*.xlsx", "*.xls"]
+            evidence_patterns = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.xlsx", "*.xls"]
             evidence_paths = []
             for ext in evidence_patterns:
                 found_files = list(excel_dir.glob(f"**/{ext}"))
                 # Filter out files in .thumbnails directories
-                filtered_files = [f for f in found_files if ".thumbnails" not in str(f)]
-                print(f"[DEBUG] Pattern {ext}: found {len(found_files)} files, filtered to {len(filtered_files)} (removed {len(found_files) - len(filtered_files)} from .thumbnails)")
-                evidence_paths.extend(filtered_files)
+                # filtered_files = [f for f in found_files if ".thumbnails" not in str(f)]
+                # print(f"[DEBUG] Pattern {ext}: found {len(found_files)} files, filtered to {len(filtered_files)} (removed {len(found_files) - len(filtered_files)} from .thumbnails)")
+                evidence_paths.extend(found_files)
             
             print(f"[DEBUG] Found {len(evidence_paths)} evidence files in {excel_dir} (excluding .thumbnails)")
             for evidence in evidence_paths[:5]:  # Show first 5 for debugging
@@ -1943,16 +1943,16 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
             all_evidence = screenshots
             
             # Limit evidence files to prevent huge PDF files (max 20 files)
-            if len(all_evidence) > 20:
-                print(f"[WARNING] Too many evidence files ({len(all_evidence)}), limiting to 20")
-                all_evidence = all_evidence[:20]
+            #if len(all_evidence) > 20:
+            #    print(f"[WARNING] Too many evidence files ({len(all_evidence)}), limiting to 20")
+            #    all_evidence = all_evidence[:20]
                 
             if all_evidence:
-                evidence_count_msg = f"Evidence Files: {len(all_evidence)}"
-                if len(screenshots) > 20:
-                    evidence_count_msg += f" (limited from {len(screenshots)} total)"
-                elements.append(Paragraph(evidence_count_msg, caption_style))
-                elements.append(Spacer(1, 15))
+                # evidence_count_msg = f"Evidence Files: {len(all_evidence)}"
+                #if len(screenshots) > 20:
+                #    evidence_count_msg += f" (limited from {len(screenshots)} total)"
+                #elements.append(Paragraph(evidence_count_msg, caption_style))
+                #elements.append(Spacer(1, 15))
                 
                 # Sort evidence files by file modification time for execution sequence
                 sorted_evidence = sorted(all_evidence, key=lambda file_path: (PROJECT_ROOT / file_path).stat().st_mtime if (PROJECT_ROOT / file_path).exists() else 0)
@@ -1962,7 +1962,7 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
                     # Get filename (defined outside try block for error handling)
                     filename = file_path.split('/')[-1] if file_path else f"file_{idx}"
                     file_extension = file_path.lower().split('.')[-1] if '.' in file_path else ''
-                    
+                    if file_extension == 'xls'or file_extension == 'xlsx': continue
                     if file_abs.exists():
                         try:
                             # Check if this is an HTML file
