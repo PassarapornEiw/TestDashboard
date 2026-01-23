@@ -77,9 +77,276 @@ app = Flask(__name__)
 # --- Configuration ---
 # The directory of this server script
 SERVER_DIR = Path(__file__).parent.resolve()
-# The project root is two levels up (from /Resources/Dashboard_Report)
+# The project root is two levels up (from /Test Dashboard/Dashboard_Report)
 PROJECT_ROOT = SERVER_DIR.parent.parent
-RESULTS_DIR = PROJECT_ROOT / "results"
+
+# Helper function for timestamp validation (moved here to be available for discovery)
+def is_valid_timestamp_folder(folder_name):
+    """Check if folder name is a valid timestamp format (YYYYMMDD-HHMMSS or YYYYMMDD_HHMMSS)."""
+    if len(folder_name) != 15:
+        return False
+    
+    # Check for valid separators at position 8
+    if folder_name[8] not in ['-', '_']:
+        return False
+    
+    # Check if date and time parts are digits
+    date_part = folder_name[:8]
+    time_part = folder_name[9:]
+    
+    return date_part.isdigit() and time_part.isdigit()
+
+def discover_results_directory():
+    """
+    Auto-discover results directory by searching for 'results' folders in project subdirectories.
+    This makes the system flexible to work with any project structure.
+    
+    Search order:
+    1. Environment variable RESULTS_DIR (if set)
+    2. Search for 'results' folders in PROJECT_ROOT subdirectories (1 level deep)
+    3. Fallback to PROJECT_ROOT / "results" (if exists)
+    
+    Returns the first valid results directory found.
+    """
+    # 1. Check environment variable first (manual override)
+    env_results_dir = os.environ.get('RESULTS_DIR')
+    if env_results_dir:
+        env_path = Path(env_results_dir)
+        if env_path.exists() and env_path.is_dir():
+            print(f"✅ Using RESULTS_DIR from environment: {env_path}")
+            return env_path
+        else:
+            print(f"⚠️ Environment RESULTS_DIR not found: {env_path}")
+    
+    # 2. Auto-discover by searching project subdirectories (1 level deep)
+    print(f"🔍 Auto-discovering results directory in: {PROJECT_ROOT}")
+    
+    # List all subdirectories in PROJECT_ROOT
+    project_subdirs = [d for d in PROJECT_ROOT.iterdir() if d.is_dir() and not d.name.startswith('.')]
+    print(f"📂 Found project subdirectories: {[d.name for d in project_subdirs]}")
+    
+    # Look for 'results' folder in each project subdirectory
+    for subdir in project_subdirs:
+        results_candidate = subdir / "results"
+        if results_candidate.exists() and results_candidate.is_dir():
+            # Check if this results directory contains valid timestamp folders
+            timestamp_dirs = [d for d in results_candidate.iterdir() 
+                            if d.is_dir() and is_valid_timestamp_folder(d.name)]
+            
+            if timestamp_dirs:
+                print(f"✅ Found valid results directory: {results_candidate}")
+                print(f"📊 Contains {len(timestamp_dirs)} timestamp folders")
+                return results_candidate
+            else:
+                print(f"📁 Found results folder but no valid timestamp data: {results_candidate}")
+    
+    # 3. Fallback to PROJECT_ROOT/results (direct under project root)
+    fallback_results = PROJECT_ROOT / "results"
+    if fallback_results.exists() and fallback_results.is_dir():
+        print(f"✅ Using fallback results directory: {fallback_results}")
+        return fallback_results
+    
+    # 4. Create a default results directory if none found
+    default_results = PROJECT_ROOT / "results"
+    print(f"⚠️ No results directory found. Creating default: {default_results}")
+    default_results.mkdir(exist_ok=True)
+    return default_results
+
+# Auto-discover results directory
+RESULTS_DIR = discover_results_directory()
+
+# ============================================================================
+# UTILITY CLASSES AND CONSTANTS
+# ============================================================================
+
+# Column name constants for Excel file parsing
+COLUMN_NAMES = {
+    'test_case': ['TestCaseNo', 'Test Case No', 'TestCase', 'TC', 'Test Case'],
+    'result_folder': ['ResultFolder', 'Result Folder', 'Folder', 'Path'],
+    'status': ['TestResult', 'Status', 'Result'],
+    'execute': ['Execute'],
+    'description': ['Test Case Description', 'TestCaseDescription', 'Description', 'Test Description', 'Name', 'TestCaseDesc'],
+    'error': ['Fail_Description', 'Fail Description', 'TestResult Description', 'Result Description', 'Error', 'Message', 'Failure Reason'],
+    'expected': ['ExpectedResult', 'Expected Result', 'Expected', 'Expected Outcome'],
+}
+
+
+class ExcelColumnFinder:
+    """Utility to find columns by multiple possible names."""
+    
+    @staticmethod
+    def find_column(df, candidates, case_sensitive=True):
+        """Find first matching column from candidates.
+        
+        Args:
+            df: pandas DataFrame
+            candidates: List of possible column names
+            case_sensitive: Whether to match case-sensitively
+            
+        Returns:
+            Column name if found, None otherwise
+        """
+        for col in candidates:
+            if case_sensitive:
+                if col in df.columns:
+                    return col
+            else:
+                for df_col in df.columns:
+                    if df_col.lower() == col.lower():
+                        return df_col
+        return None
+    
+    @staticmethod
+    def find_multiple(df, columns_dict):
+        """Find multiple columns at once.
+        
+        Args:
+            df: pandas DataFrame
+            columns_dict: Dictionary {key: [candidate1, candidate2, ...]}
+            
+        Returns:
+            Dictionary {key: found_column_name or None}
+        """
+        results = {}
+        for key, candidates in columns_dict.items():
+            results[key] = ExcelColumnFinder.find_column(df, candidates)
+        return results
+
+
+class ExcelRowAccessor:
+    """Wrapper for accessing row data from pandas Series or dict."""
+    
+    def __init__(self, row):
+        """Initialize with a row (pandas Series or dict)."""
+        self.row = row
+        try:
+            self.available_fields = list(
+                getattr(row, 'index', getattr(row, 'keys', lambda: [])())
+            )
+        except Exception:
+            self.available_fields = []
+    
+    def get(self, key, default=None):
+        """Get value from row by key.
+        
+        Args:
+            key: Column name to retrieve
+            default: Default value if key not found
+            
+        Returns:
+            Value from row or default
+        """
+        try:
+            if key is None:
+                return default
+            if hasattr(self.row, 'get'):
+                return self.row.get(key, default)
+            return self.row[key] if key in self.available_fields else default
+        except Exception:
+            return default
+    
+    def pick_column(self, candidates):
+        """Find first available column from candidates.
+        
+        Args:
+            candidates: List of possible column names
+            
+        Returns:
+            First found column name or None
+        """
+        for c in candidates:
+            if c in self.available_fields:
+                return c
+        return None
+    
+    def get_by_candidates(self, candidates, default=None):
+        """Get value using first available column from candidates.
+        
+        Args:
+            candidates: List of possible column names
+            default: Default value if no column found
+            
+        Returns:
+            Value from first found column or default
+        """
+        col = self.pick_column(candidates)
+        return self.get(col, default)
+
+
+class PathNormalizer:
+    """Utility for normalizing file paths across the application."""
+    
+    @staticmethod
+    def to_relative(absolute_path, base_path):
+        """Convert absolute path to relative from base.
+        
+        Args:
+            absolute_path: Path to convert
+            base_path: Base path to make relative to
+            
+        Returns:
+            Relative path string with forward slashes, or None if conversion fails
+        """
+        try:
+            return str(Path(absolute_path).relative_to(base_path)).replace("\\", "/")
+        except ValueError:
+            return None
+    
+    @staticmethod
+    def normalize_evidence_path(path_str):
+        """Normalize evidence path for API serving.
+        
+        Args:
+            path_str: Path string to normalize
+            
+        Returns:
+            Normalized path with /results/ prefix and forward slashes
+        """
+        path = path_str.strip()
+        # Remove optional 'Automation Project/' prefix
+        if path.startswith('Automation Project/'):
+            path = path.replace('Automation Project/', '', 1)
+        # Ensure /results/ prefix
+        if not path.startsWith('/results/'):
+            path = '/results/' + path.lstrip('/')
+        return path.replace('\\', '/')
+
+
+def normalize_test_status(status_series):
+    """Normalize test status values to standard format.
+    
+    Args:
+        status_series: pandas Series with status values
+        
+    Returns:
+        pandas Series with normalized lowercase status values
+    """
+    # Fill NaN and convert to string
+    normalized = status_series.fillna('').astype(str).str.strip()
+    
+    # Normalization mapping
+    status_mapping = {
+        r"^failed$": "fail",
+        r"^FAILED$": "fail",
+        r"^Failed$": "fail",
+        r"^fail\s*\(\s*major\s*\)$": "fail (major)",
+        r"^failed\s*\(\s*major\s*\)$": "fail (major)",
+        r"^FAIL\s*\(\s*MAJOR\s*\)$": "fail (major)",
+        r"^fail\s*\(\s*block\s*\)$": "fail (block)",
+        r"^failed\s*\(\s*block\s*\)$": "fail (block)",
+        r"^FAIL\s*\(\s*BLOCK\s*\)$": "fail (block)",
+        r"^FAIL\s*MAJOR$": "fail (major)",
+        r"^FAIL\s*BLOCK$": "fail (block)",
+        r"^FAIL\(MAJOR\)$": "fail (major)",
+        r"^FAIL\(BLOCK\)$": "fail (block)"
+    }
+    
+    normalized = normalized.replace(status_mapping, regex=True)
+    return safe_str_lower(normalized)
+
+# ============================================================================
+# END UTILITY CLASSES
+# ============================================================================
 
 # PDF font configuration (try Unicode CID fonts first, then fallback to local/system Thai TTFs)
 PDF_FONT_NORMAL = 'Helvetica'
@@ -332,20 +599,6 @@ def sanitize_filename(name: str, replacement: str = "_") -> str:
         text = text.replace(replacement * 2, replacement)
     text = text.strip().strip('.')
     return text or "file"
-def is_valid_timestamp_folder(folder_name):
-    """Check if folder name is a valid timestamp format (YYYYMMDD-HHMMSS or YYYYMMDD_HHMMSS)."""
-    if len(folder_name) != 15:
-        return False
-    
-    # Check for valid separators at position 8
-    if folder_name[8] not in ['-', '_']:
-        return False
-    
-    # Check if date and time parts are digits
-    date_part = folder_name[:8]
-    time_part = folder_name[9:]
-    
-    return date_part.isdigit() and time_part.isdigit()
 
 def extract_timestamp_from_path(path_obj):
     """Extract timestamp from path, keeping original format."""
@@ -384,7 +637,7 @@ def find_excel_files(base_dir):
                 if is_valid_timestamp_folder(item.name):
                     print(f"[DEBUG] Processing valid timestamp folder: {item.name}")
                     # Search for .xlsx files in this valid timestamp directory
-                    excel_paths = glob.glob(str(item / "**" / "*.xlsx"), recursive=True)
+                    excel_paths = glob.glob(str(item / "*.xlsx"))
                     valid_excel_paths.extend(excel_paths)
                 else:
                     print(f"[DEBUG] Ignoring invalid timestamp folder: {item.name}")
@@ -444,7 +697,7 @@ def get_test_case_description(excel_path, test_case_id):
             print(f"Excel file not found: {excel_path}")
             return None
             
-        df = pd.read_excel(excel_path)
+        df = pd.read_excel(excel_path, sheet_name="MAIN")
         try:
             print(f"[DEBUG][Excel Load] path={excel_path} rows={len(df)} cols={len(df.columns)} headers={list(df.columns)}")
         except Exception:
@@ -453,21 +706,9 @@ def get_test_case_description(excel_path, test_case_id):
         if df.empty:
             return None
         
-        # Look for test case ID column (common variations)
-        id_columns = ['Test Case ID', 'TestCaseID', 'Test Case', 'ID', 'TestCase', 'TestCaseNo']
-        id_col = None
-        for col in id_columns:
-            if col in df.columns:
-                id_col = col
-                break
-        
-        # Look for description column (common variations) - do NOT use 'Name' (often holds ID)
-        desc_columns = ['Test Case Description', 'TestCaseDescription', 'Description', 'Test Description', 'Scenario', 'Title']
-        desc_col = None
-        for col in desc_columns:
-            if col in df.columns:
-                desc_col = col
-                break
+        # Use utility to find test case ID and description columns
+        id_col = ExcelColumnFinder.find_column(df, COLUMN_NAMES['TestCaseNo'])
+        desc_col = ExcelColumnFinder.find_column(df, COLUMN_NAMES['TestCaseDesc'])
         
         if id_col and desc_col:
             # Normalize for matching
@@ -512,12 +753,8 @@ def parse_excel_data(excel_path):
             print(f"Empty Excel file: {excel_path}")
             return None
         
-        # Check for different possible column names for test results
-        status_column = None
-        for col_name in ['TestResult', 'Status', 'Result']:
-            if col_name in df.columns:
-                status_column = col_name
-                break
+        # Use utility to find status column
+        status_column = ExcelColumnFinder.find_column(df, COLUMN_NAMES['status'])
         
         if not status_column:
             print(f"No status column found in {excel_path}. Available columns: {df.columns.tolist()}")
@@ -539,12 +776,8 @@ def parse_excel_data(excel_path):
                 "image_files": []
             }
 
-        # Filter for rows that should be executed
-        execute_column = None
-        for col in df.columns:
-            if col.lower() == 'execute':
-                execute_column = col
-                break
+        # Use utility to find execute column
+        execute_column = ExcelColumnFinder.find_column(df, COLUMN_NAMES['execute'], case_sensitive=False)
                 
         # Use common filter helper
         executable_df = filter_executed_rows(df)
@@ -565,26 +798,8 @@ def parse_excel_data(excel_path):
         # Handle potential empty cells in status column gracefully
         executable_df = executable_df.copy()
         if status_column in executable_df.columns:
-            executable_df[status_column] = executable_df[status_column].fillna('').astype(str)
-            # Normalize common variants before lowering
-            # Examples that should be treated as major: 'Failed', 'FAILED', 'Failed (Major)', 'FAIL(Major)'
-            normalized_series = executable_df[status_column].str.strip()
-            normalized_series = normalized_series.replace({
-                r"^failed$": "fail",
-                r"^FAILED$": "fail",
-                r"^Failed$": "fail",
-                r"^fail\s*\(\s*major\s*\)$": "fail (major)",
-                r"^failed\s*\(\s*major\s*\)$": "fail (major)",
-                r"^FAIL\s*\(\s*MAJOR\s*\)$": "fail (major)",
-                r"^fail\s*\(\s*blocker\s*\)$": "fail (blocker)",
-                r"^failed\s*\(\s*blocker\s*\)$": "fail (blocker)",
-                r"^FAIL\s*\(\s*BLOCKER\s*\)$": "fail (blocker)",
-                r"^FAIL\s*MAJOR$": "fail (major)",
-                r"^FAIL\s*BLOCKER$": "fail (blocker)",
-                r"^FAIL\(MAJOR\)$": "fail (major)",
-                r"^FAIL\(BLOCKER\)$": "fail (blocker)"
-            }, regex=True)
-            status_lower = safe_str_lower(normalized_series)
+            # Use utility function for status normalization
+            status_lower = normalize_test_status(executable_df[status_column])
         else:
             status_lower = pd.Series(dtype=str)
         
@@ -593,7 +808,7 @@ def parse_excel_data(excel_path):
         # Count passed and failed tests (including Major and Blocker)
         pass_mask = status_lower == 'pass'
         fail_major_mask = status_lower == 'fail (major)'
-        fail_blocker_mask = status_lower == 'fail (blocker)'
+        fail_blocker_mask = status_lower == 'fail (block)'
         fail_legacy_mask = status_lower == 'fail'  # Legacy 'fail' status
         
         # Combine all failure types
@@ -628,53 +843,111 @@ def parse_excel_data(excel_path):
             else:
                 status = "failed_major"     # Has major failures only
         
-        # Find associated evidence files recursively in the feature directory and subdirectories
-        excel_dir = excel_path_obj.parent  # This should be the feature folder (e.g., Transfer/)
-        evidence_paths = []
-        try:
-            # Search for images, HTML, and Excel files in the feature directory and all subdirectories (TC001, TC002, etc.)
-            # EXCLUDE .thumbnails directories to prevent duplicates
-            evidence_patterns = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.xlsx", "*.xls"]
-            evidence_paths = []
-            for ext in evidence_patterns:
-                found_files = list(excel_dir.glob(f"**/{ext}"))
-                # Filter out files in .thumbnails directories
-                # filtered_files = [f for f in found_files if ".thumbnails" not in str(f)]
-                # print(f"[DEBUG] Pattern {ext}: found {len(found_files)} files, filtered to {len(filtered_files)} (removed {len(found_files) - len(filtered_files)} from .thumbnails)")
-                evidence_paths.extend(found_files)
-            
-            print(f"[DEBUG] Found {len(evidence_paths)} evidence files in {excel_dir} (excluding .thumbnails)")
-            for evidence in evidence_paths[:5]:  # Show first 5 for debugging
-                print(f"[DEBUG] Evidence found: {evidence}")
-                
-        except Exception as e:
-            print(f"Error searching for evidence files in {excel_dir}: {e}")
-            evidence_paths = []
+        # Extract feature name from filename first (needed for evidence filtering)
+        filename = excel_path_obj.stem  # เช่น "DRDB_Payment_Output_20250516-161132"
         
-        # Group evidence files by test case (subfolder under feature)
+        # ดึง feature name จากชื่อไฟล์
+        # base = os.path.basename(filename)
+        # if len(parts) >= 3 and parts[2] == "Output":
+        #     parts = base.split("_")
+        #     if len(parts) >= 3:
+        #         feature_name = parts[1]
+        #     else:
+        #         feature_name = "TestResults"  # fallback
+        # else:
+        #     feature_name = "TestResults"  # fallback
+
+        base = os.path.basename(filename)
+        name_wo_ext = os.path.splitext(base)[0]  # ตัดนามสกุลไฟล์ออก เช่น .xlsx
+
+        feature_name = "TestResults"  # fallback เริ่มต้น
+
+        # ตัดด้วย "_" เพื่อคงรูปแบบเดิมของทีม
+        tokens = name_wo_ext.split("_")
+
+        # พยายามหาตำแหน่งคำว่า "Output" แบบไม่สนตัวพิมพ์
+        out_idx = next((i for i, t in enumerate(tokens) if t.lower() == "output"), None)
+
+        if out_idx is not None and out_idx >= 1:
+            # ดึง token ก่อนหน้า "Output" เป็น feature_name
+            feature_name = tokens[out_idx - 1]
+        # else: คง fallback = "TestResults"
+
+        
+        print(f"[DEBUG] Extracted feature name from filename: {feature_name}")
+        
+        # NEW: Use ResultFolder column to collect evidence files
+        excel_dir = excel_path_obj.parent  # This will be the timestamp folder (e.g., results/20250620_111221/)
+        
+        # Use utility to find ResultFolder and TestCaseNo columns
+        result_folder_col = ExcelColumnFinder.find_column(df, COLUMN_NAMES['result_folder'])
+        test_case_col = ExcelColumnFinder.find_column(df, COLUMN_NAMES['test_case'])
+        
+        if result_folder_col:
+            print(f"[DEBUG] Found ResultFolder column: {result_folder_col}")
+        if test_case_col:
+            print(f"[DEBUG] Found TestCaseNo column: {test_case_col}")
+        
+        # Evidence file patterns
+        evidence_patterns = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.xlsx", "*.xls", "*.html", "*.htm"]
+        
+        # Build test_evidence by reading ResultFolder from each row
         test_evidence = {}
-        for evidence_path in evidence_paths:
-            try:
-                # The test case folder is the immediate parent of the evidence file, relative to the feature folder
-                relative_path = evidence_path.relative_to(excel_dir)
-                if len(relative_path.parts) > 1:
-                    test_case_name = relative_path.parts[0]  # First level folder under feature (TC001, TC002, etc.)
-                else:
-                    test_case_name = "General" # Fallback for evidence files in the root of the feature folder
+        
+        if result_folder_col and test_case_col:
+            print(f"[DEBUG] Using ResultFolder column to collect evidence files")
+            # Iterate through rows with Execute='Y'
+            for idx, row in df.iterrows():
+                execute_val = str(row.get(execute_column, '')).strip().upper()
+                if execute_val != 'Y':
+                    continue
                 
-                # Convert to path relative to project root for serving
-                if PROJECT_ROOT in evidence_path.parents:
-                    relative_evidence_path = str(evidence_path.relative_to(PROJECT_ROOT)).replace("\\", "/")
-                    if test_case_name not in test_evidence:
-                        test_evidence[test_case_name] = []
-                    test_evidence[test_case_name].append(relative_evidence_path)
-                    print(f"[DEBUG] Added evidence file to {test_case_name}: {relative_evidence_path}")
-                else:
-                    print(f"Evidence path not within project root: {evidence_path}")
+                test_case_id = str(row.get(test_case_col, '')).strip()
+                result_folder = str(row.get(result_folder_col, '')).strip()
+                
+                # Skip if ResultFolder is empty
+                if not result_folder or result_folder.lower() in ['nan', 'none', '']:
+                    print(f"[DEBUG] Skipping {test_case_id}: No ResultFolder specified")
+                    continue
+                
+                # Build full path: results/YYYYMMDD_HHMMSS/ResultFolder/
+                # ResultFolder format: Payment\TC001_225522422
+                result_folder_path = excel_dir / result_folder.replace('\\', '/')
+                
+                if not result_folder_path.exists():
+                    print(f"[WARN] ResultFolder not found for {test_case_id}: {result_folder_path}")
+                    continue
+                
+                print(f"[DEBUG] Processing {test_case_id} -> ResultFolder: {result_folder}")
+                
+                # Find all evidence files in this folder (non-recursive, direct children only)
+                evidence_files = []
+                for ext in evidence_patterns:
+                    found_files = list(result_folder_path.glob(ext))  # No ** = non-recursive
+                    evidence_files.extend(found_files)
+                
+                if evidence_files:
+                    # Convert to relative paths from project root using PathNormalizer
+                    test_evidence[test_case_id] = []
+                    for evidence_path in evidence_files:
+                        try:
+                            if RESULTS_DIR.parent in evidence_path.parents:
+                                relative_evidence_path = PathNormalizer.to_relative(evidence_path, RESULTS_DIR.parent)
+                                if relative_evidence_path:
+                                    test_evidence[test_case_id].append(relative_evidence_path)
+                            else:
+                                print(f"[WARN] Evidence path not within project root: {evidence_path}")
+                        except Exception as e:
+                            print(f"[ERROR] Could not process evidence path {evidence_path}: {e}")
                     
-            except Exception as e:
-                print(f"Could not process evidence path {evidence_path}: {e}")
-                continue
+                    print(f"[DEBUG] Found {len(test_evidence[test_case_id])} evidence files for {test_case_id} in {result_folder}")
+                else:
+                    print(f"[DEBUG] No evidence files found for {test_case_id} in {result_folder_path}")
+        else:
+            print(f"[WARN] Required columns not found: ResultFolder={result_folder_col}, TestCaseNo={test_case_col}")
+            print(f"[WARN] Available columns: {df.columns.tolist()}")
+            print(f"[WARN] No evidence will be collected for this Excel file")
+            test_evidence = {}
                 
         print(f"[DEBUG] Final test_evidence: {test_evidence}")
         
@@ -682,25 +955,11 @@ def parse_excel_data(excel_path):
         run_timestamp = extract_timestamp_from_path(excel_path_obj)
         print(f"[DEBUG] Extracted timestamp: {run_timestamp}")
         
-        # Extract feature name from folder structure (e.g., results/20250620_111221/Transfer/...)
-        feature_name = excel_path_obj.stem  # Default fallback
-        try:
-            path_parts = excel_path_obj.parts
-            # Look for pattern: results/timestamp/feature_folder/...
-            for i, part in enumerate(path_parts):
-                # Use the same validation function for timestamp folders
-                if is_valid_timestamp_folder(part):
-                    # Found valid timestamp folder, next folder should be feature name
-                    if i + 1 < len(path_parts):
-                        feature_name = path_parts[i + 1]  # Use folder name as feature name
-                        print(f"[DEBUG] Extracted feature name from folder: {feature_name} (from valid timestamp: {part})")
-                        break
-        except Exception as e:
-            print(f"Error extracting feature name from path: {e}")
+        # Feature name already extracted above
             
         return {
             "feature_name": feature_name,
-            "excel_path": str(excel_path_obj.relative_to(PROJECT_ROOT)).replace("\\", "/"),
+            "excel_path": str(excel_path_obj.relative_to(RESULTS_DIR.parent)).replace("\\", "/"),
             "total": total,
             "passed": passed,
             "failed": failed,
@@ -710,7 +969,6 @@ def parse_excel_data(excel_path):
             "status": status,
             "run_timestamp": run_timestamp,
             "test_evidence": test_evidence,
-            "evidence_files": [str(p.relative_to(PROJECT_ROOT)).replace("\\", "/") for p in evidence_paths if PROJECT_ROOT in p.parents], # Keep for fallback
         }
     except Exception as e:
         print(f"Error parsing Excel data from {excel_path}: {e}")
@@ -759,11 +1017,13 @@ def excel_preview():
         if not excel_path:
             return jsonify({"error": "No path provided"}), 400
             
-        full_path = PROJECT_ROOT / excel_path
+        # Allow both 'results/...' and absolute under RESULTS_DIR
+        rel_norm = excel_path.lstrip('/\\')
+        full_path = (RESULTS_DIR.parent / rel_norm)
         if not full_path.exists():
             return jsonify({"error": f"File not found: {excel_path}"}), 404
             
-        df = pd.read_excel(full_path)
+        df = pd.read_excel(full_path, sheet_name="MAIN")
         
         # Convert to JSON-serializable format with correct field names
         rows_data = df.fillna('').astype(str).to_dict('records')
@@ -1066,11 +1326,13 @@ def export_pdf():
                 # Ensure test_evidence present for this feature by re-parsing if needed
                 try:
                     if not feature.get('test_evidence'):
+                        print(f"[DEBUG] Re-parsing feature data for PDF: {feature['excel_path']}")
                         reparsed = parse_excel_data(PROJECT_ROOT / feature['excel_path'])
                         if reparsed and reparsed.get('test_evidence'):
                             feature['test_evidence'] = reparsed['test_evidence']
-                except Exception:
-                    pass
+                            print(f"[DEBUG] Updated test_evidence for PDF: {list(feature['test_evidence'].keys())}")
+                except Exception as e:
+                    print(f"[DEBUG] Failed to re-parse for PDF: {e}")
                 feature_key = f"{feature['feature_name']}_{run['timestamp']}"
                 if feature_key not in unique_features:
                     unique_features[feature_key] = feature
@@ -1199,7 +1461,7 @@ def export_pdf():
                             
                             # Find relevant columns
                             status_col = next((c for c in df.columns if c.lower() in ['testresult', 'status', 'result']), None)
-                            name_col = next((c for c in df.columns if c.lower() in ['testcasedescription', 'test case description', 'testcase', 'name']), None)
+                            name_col = next((c for c in df.columns if c.lower() in ['testcasedescription', 'test case description', 'testcase', 'name', 'TestCaseDesc']), None)
                             if not name_col:
                                 name_col = df.columns[0]
                             
@@ -1465,17 +1727,26 @@ def export_pdf():
                                     
                                                     # Check if this is an HTML file
                                                     if file_extension in ['html', 'htm']:
-                                                        # Convert HTML to image for PDF display with full page capture
-                                                        print(f"[DEBUG] Converting HTML to image: {img_path}")
-                                                        reportlab_img = create_html_preview_image(img_abs, max_width=500, max_height=400, full_page=True)
+                                                        # 🔧 FIX: Use existing thumbnail instead of creating new one
+                                                        print(f"[DEBUG] Looking for existing thumbnail: {img_path}")
+                                                        try:
+                                                            thumbnail_path = _get_thumbnail_path(img_abs)
+                                                            if thumbnail_path.exists():
+                                                                print(f"[DEBUG] Using existing thumbnail: {thumbnail_path}")
+                                                                reportlab_img = ReportLabImage(str(thumbnail_path), width=500, height=400)
+                                                            else:
+                                                                print(f"[DEBUG] No thumbnail found, skipping HTML conversion")
+                                                                reportlab_img = None
+                                                        except:
+                                                            reportlab_img = None
                                                         
                                                         if reportlab_img:
                                                             pdf_width = reportlab_img.imageWidth
                                                             pdf_height = reportlab_img.imageHeight
-                                                            print(f"[DEBUG] HTML converted successfully. Dimensions: {pdf_width}x{pdf_height}")
+                                                            print(f"[DEBUG] Using existing thumbnail. Dimensions: {pdf_width}x{pdf_height}")
                                                         else:
-                                                            # Fallback: create placeholder for HTML
-                                                            print(f"[DEBUG] HTML conversion failed, creating placeholder")
+                                                            # Fallback: create simple placeholder for HTML
+                                                            print(f"[DEBUG] No thumbnail available, creating simple placeholder")
                                                             if PIL_AVAILABLE:
                                                                 placeholder_img = PILImage.new("RGB", (500, 400), color=(245, 247, 250))
                                                                 draw = ImageDraw.Draw(placeholder_img)
@@ -1485,8 +1756,9 @@ def export_pdf():
                                                                     font = None
                                                                 
                                                                 # Draw placeholder text
-                                                                draw.text((20, 200), "HTML Preview", fill=(64, 64, 64), font=font)
-                                                                draw.text((20, 230), img_filename[:50], fill=(96, 96, 96), font=font)
+                                                                draw.text((20, 180), "HTML File", fill=(64, 64, 64), font=font)
+                                                                draw.text((20, 200), img_filename[:50], fill=(96, 96, 96), font=font)
+                                                                draw.text((20, 220), "(Thumbnail not available)", fill=(128, 128, 128), font=font)
                                                                 
                                                                 with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_img:
                                                                     placeholder_img.save(temp_img.name, format='JPEG', quality=75)
@@ -1501,7 +1773,7 @@ def export_pdf():
                                                             else:
                                                                 # If PIL not available, create text placeholder
                                                                 elements.append(Paragraph(f"<b>HTML File:</b> {img_filename}", normal_style))
-                                                                elements.append(Paragraph("(HTML preview not available - PIL/Pillow required)", caption_style))
+                                                                elements.append(Paragraph("(HTML preview not available)", caption_style))
                                                                 elements.append(Spacer(1, 10))
                                                                 continue
                                                     else:
@@ -1623,48 +1895,31 @@ def export_pdf():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, feature_data, test_case_row):
+def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, feature_data, test_case_row, mode='full'):
     """Core PDF generation logic - reusable for both individual and ZIP downloads.
     Robust to both pandas.Series and dict rows.
+    
+    Args:
+        test_case_id: Test case identifier
+        feature_name: Feature name
+        run_timestamp: Execution timestamp
+        feature_data: Feature data dictionary
+        test_case_row: Row data (pandas Series or dict)
+        mode: 'full' for complete PDF, 'optimized' for reduced content
     """
     try:
-        # Normalize access helpers (support pandas Series or dict)
+        # Use ExcelRowAccessor utility for row access
+        accessor = ExcelRowAccessor(test_case_row)
+        
+        # Get test case information using COLUMN_NAMES constants
+        test_case_description = accessor.get_by_candidates(COLUMN_NAMES['description'], '')
+        status_raw = accessor.get_by_candidates(COLUMN_NAMES['status'], 'UNKNOWN')
+        error_message = accessor.get_by_candidates(COLUMN_NAMES['error'], '')
+        expected_result = accessor.get_by_candidates(COLUMN_NAMES['expected'], '')
+        
         try:
-            available_fields = list(getattr(test_case_row, 'index', getattr(test_case_row, 'keys', lambda: [])()))
-        except Exception:
-            available_fields = []
-
-        def row_get(key, default=None):
-            try:
-                if key is None:
-                    return default
-                # Use mapping-style get when available
-                if hasattr(test_case_row, 'get'):
-                    return test_case_row.get(key, default)
-                # Fallback for Series without .get
-                return test_case_row[key] if key in available_fields else default
-            except Exception:
-                return default
-
-        def pick_col(candidates):
-            for c in candidates:
-                if c in available_fields:
-                    return c
-            return None
-
-        # Get test case information
-        desc_columns = ['Test Case Description', 'TestCaseDescription', 'Description', 'Test Description', 'Name']
-        desc_col = pick_col(desc_columns)
-        status_columns = ['TestResult', 'Status', 'Result']
-        status_col = pick_col(status_columns)
-        error_columns = ['Fail_Description', 'Fail Description', 'TestResult Description', 'Result Description', 'Error', 'Message', 'Failure Reason']
-        error_col = pick_col(error_columns)
-        expected_result_columns = ['ExpectedResult', 'Expected Result', 'Expected', 'Expected Outcome']
-        expected_result_col = pick_col(expected_result_columns)
-
-        try:
-            print(f"[DEBUG][Row Mapping] test_case_id={test_case_id} available_fields={list(available_fields)}")
-            print(f"[DEBUG][Row Mapping] chosen -> desc_col={desc_col}, status_col={status_col}, error_col={error_col}, expected_result_col={expected_result_col}")
+            print(f"[DEBUG][Row Values] test_case_id={test_case_id} mode={mode}")
+            print(f"[DEBUG][Row Values] desc='{test_case_description[:100] if test_case_description else None}...' status='{status_raw}'")
         except Exception:
             pass
         
@@ -1685,6 +1940,11 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
                         folder_name_for_title = folder_name
                         break
         
+        # Limit screenshots in optimized mode
+        if mode == 'optimized' and screenshots:
+            screenshots = screenshots[:5]  # Limit to 5 files in optimized mode
+            print(f"[DEBUG] Optimized mode: limited evidence files to {len(screenshots)}")
+        
         # Extract test case information with correct separation
         # 1. Title: Use folder name from screenshot folder (as requested)
         # 2. Test Case Description: Use Excel data (separate field)
@@ -1698,20 +1958,25 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
         else:
             title_name = test_case_id  # fallback to ID if no folder
         
-        # Get Test Case Description from Excel (separate field)
-        test_case_description = str(row_get(desc_col, test_case_id))
-        if not test_case_description or test_case_description.lower() in ['nan', 'none', '']:
+        # Process test case description
+        if not test_case_description or str(test_case_description).lower() in ['nan', 'none', '']:
             test_case_description = test_case_id  # fallback to ID if no description
         
-        # Use title_name for header, test_case_description for description field
-        test_case_name = title_name  # This will be used for the title
-
-        status_raw = row_get(status_col, 'UNKNOWN')
+        # Use title_name for header
+        test_case_name = title_name
+        
+        # Process status
         test_case_status = str(status_raw).strip().upper() if status_raw is not None else 'UNKNOWN'
-        error_val = row_get(error_col, '')
-        error_message = str(error_val) if error_val is not None else ''
-        expected_val = row_get(expected_result_col, '')
-        expected_result = str(expected_val) if expected_val is not None else ''
+        error_message = str(error_message) if error_message is not None else ''
+        expected_result = str(expected_result) if expected_result is not None else ''
+        
+        # Apply optimizations if in optimized mode
+        if mode == 'optimized':
+            # Truncate long descriptions
+            if test_case_description and len(str(test_case_description)) > 500:
+                test_case_description = str(test_case_description)[:500] + '...'
+            if error_message and len(error_message) > 1000:
+                error_message = error_message[:1000] + '...'
 
         try:
             print(f"[DEBUG][Row Values] name='{test_case_name}' status='{test_case_status}' has_error={bool(error_message)} has_expected={bool(expected_result)}")
@@ -1759,7 +2024,10 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
         if test_case_status == "PASS":
             status_color = colors.HexColor("#28a745")
             status_bg_color = colors.HexColor("#d4edda")
-        elif test_case_status == "FAIL":
+        elif test_case_status == "FAIL (MAJOR)":
+            status_color = colors.HexColor("#ff5722")
+            status_bg_color = colors.HexColor("#f8d7da")
+        elif test_case_status == "FAIL (BLOCK)":
             status_color = colors.HexColor("#dc3545")
             status_bg_color = colors.HexColor("#f8d7da")
         else:
@@ -1793,7 +2061,7 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
         metadata_data = [
             ["Execution Date & Time:", format_timestamp_professional(run_timestamp)],
             ["Feature Category:", feature_name],
-            ["Test Case ID:", test_case_id]
+            ["Test Case ID:", test_case_id],
         ]
         
         if test_case_description and test_case_description != test_case_id:
@@ -1941,43 +2209,64 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
             
             # Show all evidence files, not just screenshots, but limit to prevent huge files
             all_evidence = screenshots
+
+            # Sorting Screenshot in PDF
+            def extract_number(file_path):
+                """Extract leading number from filename for sorting"""
+                filename = file_path.split('/')[-1] if file_path else ''
+                match = re.match(r'^(\d+)', filename)
+                return int(match.group(1)) if match else 0
             
-            # Limit evidence files to prevent huge PDF files (max 20 files)
-            #if len(all_evidence) > 20:
-            #    print(f"[WARNING] Too many evidence files ({len(all_evidence)}), limiting to 20")
-            #    all_evidence = all_evidence[:20]
+            # Sort by leading number in filename
+            all_evidence = sorted(all_evidence, key=extract_number)
+            
+            # Limit evidence files to prevent huge PDF files (max 100 files)
+            if len(all_evidence) > 100:
+                print(f"[WARNING] Too many evidence files ({len(all_evidence)}), limiting to 100")
+                all_evidence = all_evidence[:100]
                 
             if all_evidence:
-                # evidence_count_msg = f"Evidence Files: {len(all_evidence)}"
-                #if len(screenshots) > 20:
-                #    evidence_count_msg += f" (limited from {len(screenshots)} total)"
-                #elements.append(Paragraph(evidence_count_msg, caption_style))
-                #elements.append(Spacer(1, 15))
+                evidence_count_msg = f"Evidence Files: {len(all_evidence)}"
+                if len(screenshots) > 100:
+                   evidence_count_msg += f" (limited from {len(screenshots)} total)"
+                elements.append(Paragraph(evidence_count_msg, caption_style))
+                elements.append(Spacer(1, 15))
                 
                 # Sort evidence files by file modification time for execution sequence
-                sorted_evidence = sorted(all_evidence, key=lambda file_path: (PROJECT_ROOT / file_path).stat().st_mtime if (PROJECT_ROOT / file_path).exists() else 0)
+                # sorted_evidence = sorted(all_evidence, key=lambda file_path: (PROJECT_ROOT / file_path).stat().st_mtime if (PROJECT_ROOT / file_path).exists() else 0)
                 
-                for idx, file_path in enumerate(sorted_evidence, 1):
-                    file_abs = PROJECT_ROOT / file_path
+                for idx, file_path in enumerate(all_evidence, 1):
+                    file_abs = RESULTS_DIR.parent / file_path
+                    print(f"[DEBUG] ton file_abs: {file_abs}")
                     # Get filename (defined outside try block for error handling)
                     filename = file_path.split('/')[-1] if file_path else f"file_{idx}"
                     file_extension = file_path.lower().split('.')[-1] if '.' in file_path else ''
+                    
                     if file_extension == 'xls'or file_extension == 'xlsx': continue
                     if file_abs.exists():
                         try:
                             # Check if this is an HTML file
                             if file_extension in ['html', 'htm']:
-                                # Convert HTML to image for PDF display with full page capture
-                                print(f"[DEBUG] Converting HTML to image for PDF: {file_path}")
-                                reportlab_img = create_html_preview_image(file_abs, max_width=400, max_height=300, full_page=True)
+                                # 🔧 FIX: Use existing thumbnail instead of creating new one
+                                print(f"[DEBUG] Looking for existing thumbnail for PDF: {file_path}")
+                                try:
+                                    thumbnail_path = _get_thumbnail_path(file_abs)
+                                    if thumbnail_path.exists():
+                                        print(f"[DEBUG] Using existing thumbnail for PDF: {thumbnail_path}")
+                                        reportlab_img = ReportLabImage(str(thumbnail_path), width=400, height=300)
+                                        pdf_width = 400
+                                        pdf_height = 300
+                                    else:
+                                        print(f"[DEBUG] No thumbnail found for PDF, creating placeholder")
+                                        reportlab_img = None
+                                except:
+                                    reportlab_img = None
                                 
                                 if reportlab_img:
-                                    pdf_width = reportlab_img.imageWidth
-                                    pdf_height = reportlab_img.imageHeight
-                                    print(f"[DEBUG] HTML converted successfully for PDF. Dimensions: {pdf_width}x{pdf_height}")
+                                    print(f"[DEBUG] Using existing thumbnail for PDF. Dimensions: {pdf_width}x{pdf_height}")
                                 else:
                                     # Fallback: create placeholder for HTML
-                                    print(f"[DEBUG] HTML conversion failed for PDF, creating placeholder")
+                                    print(f"[DEBUG] No thumbnail available for PDF, creating placeholder")
                                     if PIL_AVAILABLE:
                                         placeholder_img = PILImage.new("RGB", (400, 300), color=(245, 247, 250))
                                         draw = ImageDraw.Draw(placeholder_img)
@@ -2192,244 +2481,7 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
                 raise build_error
         
     except Exception as e:
-        print(f"Error generating test case PDF for {test_case_id}: {e}")
-        return None
-
-def generate_optimized_test_case_pdf(test_case_id, feature_name, run_timestamp, feature_data, test_case_row):
-    """Generate an optimized PDF with reduced content for large files."""
-    try:
-        print(f"[DEBUG] Generating optimized PDF for {test_case_id}")
-        
-        # Use similar structure but with content limitations
-        try:
-            available_fields = list(getattr(test_case_row, 'index', getattr(test_case_row, 'keys', lambda: [])()))
-        except Exception:
-            available_fields = []
-
-        def row_get(key, default=None):
-            try:
-                if key is None:
-                    return default
-                if hasattr(test_case_row, 'get'):
-                    return test_case_row.get(key, default)
-                return test_case_row[key] if key in available_fields else default
-            except Exception:
-                return default
-
-        def pick_col(candidates):
-            for c in candidates:
-                if c in available_fields:
-                    return c
-            return None
-
-        # Get basic info
-        desc_columns = ['Test Case Description', 'TestCaseDescription', 'Description', 'Test Description', 'Name']
-        desc_col = pick_col(desc_columns)
-        status_columns = ['TestResult', 'Status', 'Result']
-        status_col = pick_col(status_columns)
-        error_columns = ['Fail_Description', 'Fail Description', 'TestResult Description', 'Result Description', 'Error', 'Message', 'Failure Reason']
-        error_col = pick_col(error_columns)
-
-        test_case_name = str(row_get(desc_col, test_case_id))
-        status_raw = row_get(status_col, 'UNKNOWN')
-        test_case_status = str(status_raw).strip().upper() if status_raw is not None else 'UNKNOWN'
-        error_val = row_get(error_col, '')
-        error_message = str(error_val) if error_val is not None else ''
-
-        # Create simplified PDF
-        buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=30, bottomMargin=30)
-        styles = getSampleStyleSheet()
-        elements = []
-
-        # Simple title
-        title_style = styles['Title'].clone('OptimizedTitleStyle')
-        title_style.fontSize = 16
-        title_style.spaceAfter = 20
-        title_style.textColor = colors.HexColor("#8B4513")
-        title_style.fontName = PDF_FONT_BOLD
-        title_style.alignment = 1
-        
-        elements.append(Paragraph(f"Test Case: {escape_html_for_pdf(test_case_id)}", title_style))
-        elements.append(Spacer(1, 20))
-
-        # Status
-        status_style = styles['Normal'].clone('OptimizedStatusStyle')
-        status_style.fontSize = 14
-        status_style.fontName = PDF_FONT_BOLD
-        status_style.alignment = 1
-        
-        if test_case_status == "PASS":
-            status_style.textColor = colors.HexColor("#28a745")
-        elif test_case_status == "FAIL":
-            status_style.textColor = colors.HexColor("#dc3545")
-        else:
-            status_style.textColor = colors.HexColor("#6c757d")
-            
-        elements.append(Paragraph(f"Status: {test_case_status}", status_style))
-        elements.append(Spacer(1, 20))
-
-        # Basic metadata
-        normal_style = styles['Normal'].clone('OptimizedNormalStyle')
-        normal_style.fontSize = 10
-        normal_style.leading = 12
-        
-        elements.append(Paragraph(f"<b>Test Case ID:</b> {escape_html_for_pdf(test_case_id)}", normal_style))
-        elements.append(Spacer(1, 10))
-        
-        if test_case_name and test_case_name != test_case_id:
-            elements.append(Paragraph(f"<b>Description:</b> {escape_html_for_pdf(test_case_name[:500])}...", normal_style))
-            elements.append(Spacer(1, 10))
-        
-        elements.append(Paragraph(f"<b>Feature:</b> {escape_html_for_pdf(feature_name)}", normal_style))
-        elements.append(Spacer(1, 10))
-        
-        elements.append(Paragraph(f"<b>Execution Time:</b> {format_timestamp_professional(run_timestamp)}", normal_style))
-        elements.append(Spacer(1, 20))
-
-        # Truncated error message if any
-        if error_message and error_message.strip():
-            error_style = styles['Normal'].clone('OptimizedErrorStyle')
-            error_style.fontSize = 10
-            error_style.textColor = colors.HexColor("#dc3545")
-            error_style.fontName = PDF_FONT_NORMAL
-            error_style.leading = 12
-            
-            # Limit error message to 2000 characters
-            truncated_error = error_message[:2000]
-            if len(error_message) > 2000:
-                truncated_error += "... [ข้อความถูกตัดทอนเนื่องจากความยาว]"
-            
-            safe_error = escape_html_for_pdf(truncated_error)
-            elements.append(Paragraph(f"<b>Error Description:</b><br/>{safe_error}", error_style))
-            elements.append(Spacer(1, 20))
-
-        # Limited evidence files (max 5)
-        evidence_files = []
-        if feature_data.get('test_evidence'):
-            if test_case_id in feature_data['test_evidence']:
-                evidence_files = feature_data['test_evidence'][test_case_id][:5]  # Limit to 5 files
-
-        if evidence_files:
-            elements.append(Paragraph("<b>Evidence Files (Limited to 5):</b>", normal_style))
-            elements.append(Spacer(1, 10))
-            
-            for idx, file_path in enumerate(evidence_files, 1):
-                file_abs = PROJECT_ROOT / file_path
-                if file_abs.exists():
-                    try:
-                        file_extension = file_path.lower().split('.')[-1] if '.' in file_path else ''
-                        
-                        # Check if this is an HTML file
-                        if file_extension in ['html', 'htm']:
-                            # Convert HTML to image for PDF display with full page capture
-                            print(f"[DEBUG] Converting HTML to image for optimized PDF: {file_path}")
-                            reportlab_img = create_html_preview_image(file_abs, max_width=300, max_height=200, full_page=True)
-                            
-                            if reportlab_img:
-                                pdf_width = reportlab_img.imageWidth
-                                pdf_height = reportlab_img.imageHeight
-                            else:
-                                # Fallback: create placeholder for HTML
-                                if PIL_AVAILABLE:
-                                    placeholder_img = PILImage.new("RGB", (300, 200), color=(245, 247, 250))
-                                    draw = ImageDraw.Draw(placeholder_img)
-                                    try:
-                                        font = ImageFont.load_default()
-                                    except Exception:
-                                        font = None
-                                    
-                                    # Draw placeholder text
-                                    draw.text((15, 100), "HTML Preview", fill=(64, 64, 64), font=font)
-                                    draw.text((15, 120), file_path.split('/')[-1][:30], fill=(96, 96, 96), font=font)
-                                    
-                                    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_img:
-                                        placeholder_img.save(temp_img.name, format='JPEG', quality=70)
-                                        reportlab_img = ReportLabImage(temp_img.name, width=300, height=200)
-                                        pdf_width, pdf_height = 300, 200
-                                        
-                                        # Clean up temp file
-                                        try:
-                                            os.unlink(temp_img.name)
-                                        except:
-                                            pass
-                                else:
-                                    # If PIL not available, create text placeholder
-                                    elements.append(Paragraph(f"<b>HTML File:</b> {file_path.split('/')[-1]}", normal_style))
-                                    elements.append(Paragraph("(HTML preview not available)", normal_style))
-                                    elements.append(Spacer(1, 10))
-                                    continue
-                        else:
-                            # Regular image file processing
-                            # Smaller images for optimization
-                            if PIL_AVAILABLE:
-                                with PILImage.open(str(file_abs)) as pil_img:
-                                    # Smaller size for optimized PDF
-                                    max_width, max_height = 300, 200
-                                    original_width, original_height = pil_img.size
-                                    
-                                    width_ratio = max_width / original_width
-                                    height_ratio = max_height / original_height
-                                    scale_ratio = min(width_ratio, height_ratio)
-                                    
-                                    pdf_width = original_width * scale_ratio
-                                    pdf_height = original_height * scale_ratio
-                                    
-                                    if pil_img.mode in ('RGBA', 'LA', 'P'):
-                                        rgb_img = PILImage.new('RGB', pil_img.size, (255, 255, 255))
-                                        if pil_img.mode == 'P':
-                                            pil_img = pil_img.convert('RGBA')
-                                        rgb_img.paste(pil_img, mask=pil_img.split()[-1] if pil_img.mode in ('RGBA', 'LA') else None)
-                                        pil_img = rgb_img
-                                    
-                                    with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_img:
-                                        pil_img.save(temp_img.name, 'JPEG', quality=70, optimize=True)  # Lower quality
-                                        reportlab_img = ReportLabImage(temp_img.name, width=pdf_width, height=pdf_height)
-                                        
-                                        # Clean up temp file
-                                        try:
-                                            os.unlink(temp_img.name)
-                                        except:
-                                            pass
-                            else:
-                                reportlab_img = ReportLabImage(str(file_abs), width=300, height=200)
-                                pdf_width, pdf_height = 300, 200
-                        
-                        filename = file_path.split('/')[-1]
-                        file_type_label = "HTML File" if file_extension in ['html', 'htm'] else "Screenshot"
-                        img_table = Table([[reportlab_img], [Paragraph(f"<b>{file_type_label}:</b> {filename}", normal_style)]], colWidths=[300])
-                        img_table.setStyle(TableStyle([
-                            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-                            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                        ]))
-                        
-                        elements.append(img_table)
-                        elements.append(Spacer(1, 15))
-                                
-                    except Exception as e:
-                        print(f"[ERROR] Failed to add evidence file {file_path}: {e}")
-                        continue
-        else:
-            elements.append(Paragraph("No evidence files available.", normal_style))
-
-        # Footer
-        elements.append(Spacer(1, 30))
-        footer_style = styles['Normal'].clone('OptimizedFooterStyle')
-        footer_style.fontSize = 8
-        footer_style.textColor = colors.HexColor("#666666")
-        footer_style.alignment = 1
-        
-        elements.append(Paragraph("Generated by: Test Automation Dashboard (Optimized Version)", footer_style))
-        elements.append(Paragraph(f"Report Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", footer_style))
-        elements.append(Paragraph("Note: This is an optimized version with limited content due to size constraints.", footer_style))
-
-        # Build optimized PDF
-        doc.build(elements)
-        buffer.seek(0)
-        return buffer
-        
-    except Exception as e:
-        print(f"[ERROR] Optimized PDF generation failed for {test_case_id}: {e}")
+        print(f"Error generating test case PDF for {test_case_id}: {e.args}")
         return None
 
 @app.route('/api/export_testcase_pdf', methods=['POST'])
@@ -2447,6 +2499,7 @@ def export_testcase_pdf():
             return jsonify({'error': 'No data provided'}), 400
             
         test_case_id = data.get('test_case_id')
+        test_case_desc = data.get('test_case_desc')
         feature_name = data.get('feature_name')
         run_timestamp = data.get('run_timestamp')
         
@@ -2480,13 +2533,13 @@ def export_testcase_pdf():
             return jsonify({'error': f'Test case not found: {test_case_id} in {feature_name}'}), 404
 
         # Get Excel file for test case details
-        excel_path = PROJECT_ROOT / target_feature_data['excel_path']
-        print(f"[DEBUG] Reading Excel file: {excel_path}")
-        if not excel_path.exists():
-            print(f"[ERROR] Excel file not found: {excel_path}")
-            return jsonify({'error': f'Excel file not found: {excel_path}'}), 404
+        #excel_path = PROJECT_ROOT / target_feature_data['excel_path']
+        #print(f"[DEBUG] Reading Excel file: {excel_path}")
+        #if not excel_path.exists():
+        #    print(f"[ERROR] Excel file not found: {excel_path}")
+        #    return jsonify({'error': f'Excel file not found: {excel_path}'}), 404
             
-        df = pd.read_excel(excel_path)
+        df = pd.read_excel(excel_file)
         print(f"[DEBUG] Excel file loaded successfully. Shape: {df.shape}")
         print(f"[DEBUG] Available columns: {list(df.columns)}")
         
@@ -2494,7 +2547,7 @@ def export_testcase_pdf():
         id_columns = ['Test Case ID', 'TestCaseID', 'Test Case', 'ID', 'TestCase', 'TestCaseNo', 'Name']
         id_col = find_first_column(df.columns, id_columns)
         
-        desc_columns = ['Test Case Description', 'TestCaseDescription', 'Description', 'Test Description', 'Name']
+        desc_columns = ['Test Case Description', 'TestCaseDescription', 'Description', 'Test Description', 'Name', 'TestCaseDesc']
         desc_col = find_first_column(df.columns, desc_columns)
         
         status_columns = ['TestResult', 'Status', 'Result']
@@ -2567,9 +2620,9 @@ def export_testcase_pdf():
             if pdf_size > 100 * 1024 * 1024:  # 100 MB limit
                 print(f"[WARNING] PDF is too large ({pdf_size / (1024*1024):.2f} MB), creating optimized version")
                 
-                # Create a simpler PDF with reduced content
+                # Create a simpler PDF with reduced content using optimized mode
                 try:
-                    optimized_buffer = generate_optimized_test_case_pdf(test_case_id, feature_name, run_timestamp, target_feature_data, test_case_row)
+                    optimized_buffer = generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, target_feature_data, test_case_row, mode='optimized')
                     if optimized_buffer:
                         opt_size = len(optimized_buffer.getvalue())
                         print(f"[DEBUG] Optimized PDF size: {opt_size} bytes ({opt_size / (1024*1024):.2f} MB)")
@@ -2649,6 +2702,7 @@ def export_feature_pdfs_zip():
             df = df[df[execute_column].str.lower() == 'y'].copy()
 
         # Create temporary ZIP file
+        pdf_count = 0
         with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as temp_zip:
             with zipfile.ZipFile(temp_zip.name, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 
@@ -2668,15 +2722,26 @@ def export_feature_pdfs_zip():
                         )
                         
                         if pdf_buffer:
-                            # Add PDF to ZIP
-                            filename = f"{sanitize_filename(test_case_id)}_{sanitize_filename(feature_name)}.pdf"
-                            zipf.writestr(filename, pdf_buffer.getvalue())
-                            print(f"Added PDF for test case: {test_case_id}")
+                            # Ensure buffer is at the beginning and get content
+                            pdf_buffer.seek(0)
+                            pdf_content = pdf_buffer.getvalue()
+                            
+                            # Validate PDF content is not empty
+                            if pdf_content and len(pdf_content) > 0:
+                                # Add PDF to ZIP
+                                filename = f"{sanitize_filename(test_case_id)}_{sanitize_filename(feature_name)}.pdf"
+                                zipf.writestr(filename, pdf_content)
+                                pdf_count += 1
+                                print(f"Added PDF for test case: {test_case_id} (size: {len(pdf_content)} bytes)")
+                            else:
+                                print(f"PDF content is empty for test case: {test_case_id}")
                         else:
                             print(f"Failed to generate PDF for test case: {test_case_id}")
                             
                     except Exception as e:
                         print(f"Error generating PDF for test case {test_case_id}: {e}")
+                        import traceback
+                        traceback.print_exc()
                         continue
 
         # Read the ZIP file and return it
@@ -2685,6 +2750,13 @@ def export_feature_pdfs_zip():
         
         # Clean up temporary file
         os.unlink(temp_zip.name)
+        
+        # Validate ZIP content is not empty
+        if not zip_data or len(zip_data) == 0:
+            print(f"[ERROR] ZIP file is empty for feature: {feature_name}")
+            return jsonify({'error': 'Generated ZIP file is empty. No valid test cases found or PDF generation failed.'}), 500
+        
+        print(f"[DEBUG] ZIP file created successfully for feature: {feature_name}, size: {len(zip_data)} bytes, PDFs included: {pdf_count}")
         
         # Generate filename
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -2722,6 +2794,7 @@ def export_latest_all_features_zip():
 
         try:
             # Create ZIP in memory
+            total_pdf_count = 0
             zip_buffer = io.BytesIO()
             with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 
@@ -2779,15 +2852,26 @@ def export_latest_all_features_zip():
                                     )
                                     
                                     if pdf_buffer:
-                                        # Add PDF to ZIP with feature folder structure
-                                        filename = f"{feature_folder}{sanitize_filename(test_case_id)}.pdf"
-                                        zipf.writestr(filename, pdf_buffer.getvalue())
-                                        print(f"Added PDF for test case: {test_case_id} in feature: {feature_name}")
+                                        # Ensure buffer is at the beginning and get content
+                                        pdf_buffer.seek(0)
+                                        pdf_content = pdf_buffer.getvalue()
+                                        
+                                        # Validate PDF content is not empty
+                                        if pdf_content and len(pdf_content) > 0:
+                                            # Add PDF to ZIP with feature folder structure
+                                            filename = f"{feature_folder}{sanitize_filename(test_case_id)}.pdf"
+                                            zipf.writestr(filename, pdf_content)
+                                            total_pdf_count += 1
+                                            print(f"Added PDF for test case: {test_case_id} in feature: {feature_name} (size: {len(pdf_content)} bytes)")
+                                        else:
+                                            print(f"PDF content is empty for test case: {test_case_id}")
                                     else:
                                         print(f"Failed to generate PDF for test case: {test_case_id}")
                                         
                                 except Exception as e:
                                     print(f"Error generating PDF for test case {test_case_id}: {e}")
+                                    import traceback
+                                    traceback.print_exc()
                                     continue
                                     
                         except Exception as e:
@@ -2797,6 +2881,13 @@ def export_latest_all_features_zip():
             # Get the ZIP data from memory buffer
             zip_buffer.seek(0)
             zip_data = zip_buffer.getvalue()
+            
+            # Validate ZIP content is not empty
+            if not zip_data or len(zip_data) == 0:
+                print(f"[ERROR] ZIP file is empty for all features export")
+                return jsonify({'error': 'Generated ZIP file is empty. No valid test cases found or PDF generation failed.'}), 500
+            
+            print(f"[DEBUG] ZIP file created successfully for all features, size: {len(zip_data)} bytes, total PDFs included: {total_pdf_count}")
             
             # Generate filename
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -2820,6 +2911,154 @@ def export_latest_all_features_zip():
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/test_pdf_generation', methods=['GET'])
+def test_pdf_generation():
+    """Test PDF generation functionality to diagnose issues."""
+    try:
+        # Check if ReportLab is available
+        if not REPORTLAB_AVAILABLE:
+            return jsonify({
+                'status': 'error',
+                'message': 'ReportLab not installed',
+                'reportlab_available': False
+            }), 500
+        
+        # Test basic PDF creation
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4)
+        styles = getSampleStyleSheet()
+        elements = []
+        
+        # Add test content
+        title = Paragraph("PDF Generation Test", styles['Title'])
+        elements.append(title)
+        elements.append(Spacer(1, 20))
+        
+        content = Paragraph("This is a test PDF to verify PDF generation is working correctly.", styles['Normal'])
+        elements.append(content)
+        elements.append(Spacer(1, 20))
+        
+        # Add Thai text test
+        thai_text = Paragraph(f"ทดสอบข้อความภาษาไทย - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal'])
+        elements.append(thai_text)
+        
+        # Build PDF
+        doc.build(elements)
+        buffer.seek(0)
+        pdf_size = len(buffer.getvalue())
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'PDF generation test successful',
+            'reportlab_available': True,
+            'pdf_size': pdf_size,
+            'fonts': {
+                'normal': PDF_FONT_NORMAL,
+                'bold': PDF_FONT_BOLD
+            }
+        })
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"[ERROR] PDF generation test failed: {e}")
+        print(f"[ERROR] Traceback: {error_details}")
+        
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'error_details': error_details,
+            'reportlab_available': REPORTLAB_AVAILABLE
+        }), 500
+
+@app.route('/api/test_pdf_download', methods=['GET'])
+def test_pdf_download():
+    """Test PDF download functionality."""
+    try:
+        if not REPORTLAB_AVAILABLE:
+            return jsonify({'error': 'ReportLab not installed'}), 500
+        
+        # Create test PDF
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4)
+        styles = getSampleStyleSheet()
+        elements = []
+        
+        # Add test content
+        title = Paragraph("Test PDF Download", styles['Title'])
+        elements.append(title)
+        elements.append(Spacer(1, 20))
+        
+        content = Paragraph(f"Test PDF created at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal'])
+        elements.append(content)
+        elements.append(Spacer(1, 20))
+        
+        thai_content = Paragraph("ทดสอบการดาวน์โหลด PDF ภาษาไทย", styles['Normal'])
+        elements.append(thai_content)
+        
+        # Build and return PDF
+        doc.build(elements)
+        buffer.seek(0)
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"test_pdf_{timestamp}.pdf"
+        
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/pdf'
+        )
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Test PDF download failed: {str(e)}'}), 500
+
+# @app.route('/api/system_status', methods=['GET'])
+# def system_status():
+#     """Check system status for PDF generation."""
+#     try:
+#         status = {
+#             'reportlab_available': REPORTLAB_AVAILABLE,
+#             'matplotlib_available': MATPLOTLIB_AVAILABLE,
+#             'project_root': str(PROJECT_ROOT),
+#             'results_dir': str(RESULTS_DIR),
+#             'pdf_fonts': {
+#                 'normal': PDF_FONT_NORMAL,
+#                 'bold': PDF_FONT_BOLD
+#             }
+#         }
+        
+#         # Check if results directory exists and has files
+#         if RESULTS_DIR.exists():
+#             excel_files = find_excel_files(RESULTS_DIR)
+#             status['results_dir_exists'] = True
+#             status['excel_files_count'] = len(excel_files)
+#             status['sample_excel_files'] = [str(f) for f in excel_files[:5]]  # Show first 5
+#         else:
+#             status['results_dir_exists'] = False
+#             status['excel_files_count'] = 0
+        
+#         # Test basic imports
+#         try:
+#             if REPORTLAB_AVAILABLE:
+#                 from reportlab.lib.pagesizes import A4
+#                 status['reportlab_imports'] = 'success'
+#             else:
+#                 status['reportlab_imports'] = 'failed'
+#         except Exception as e:
+#             status['reportlab_imports'] = f'failed: {str(e)}'
+        
+#         return jsonify(status)
+        
+#     except Exception as e:
+#         import traceback
+#         return jsonify({
+#             'error': str(e),
+#             'traceback': traceback.format_exc()
+#         }), 500
 
 def format_timestamp_professional(timestamp_str):
     """Format timestamp professionally (helper function)."""
@@ -2943,7 +3182,7 @@ def _html_to_thumbnail(html_abs_path: Path, thumb_abs_path: Path = None, width: 
                 page.screenshot(path=str(thumb_abs_path), full_page=True, type='png')
                 browser.close()
 
-                if thumb_abs_path.exists() and thumb_abs_path.stat().st_size > 1000:
+                if thumb_abs_path.exists() and thumb_abs_path.stat().st_size > 10000:
                     print(f"[INFO] Successfully generated HTML thumbnail with Playwright: {thumb_abs_path}")
                     return True
                 else:
@@ -3091,7 +3330,8 @@ def api_evidence_thumbnail():
     try:
         # Strip leading slashes if provided
         rel_path_norm = rel_path.lstrip('/\\')
-        abs_path = (PROJECT_ROOT / rel_path_norm).resolve()
+        # Join against RESULTS_DIR parent so 'results/...' resolves to the correct tree
+        abs_path = (RESULTS_DIR.parent / rel_path_norm).resolve()
         if RESULTS_DIR not in abs_path.parents and abs_path != RESULTS_DIR:
             return abort(400, description="Path must be under results directory")
         
@@ -3332,91 +3572,6 @@ def create_html_preview_image(html_abs_path: Path, max_width: int = 500, max_hei
         print(f"[ERROR] Failed to create HTML preview image for {html_abs_path}: {e}")
         return None
 
-def clear_thumbnail_cache():
-    """Clear all thumbnail cache to force regeneration.
-    
-    NEW STRUCTURE: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/file_hash.png
-    """
-    try:
-        cleared_count = 0
-        
-        # Clear all .thumbnails folders in the new structure
-        for thumb_folder in RESULTS_DIR.rglob(".thumbnails"):
-            try:
-                # Check if this is in the correct location
-                # Should be: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/
-                parent_path = thumb_folder.parent
-                if parent_path.name == ".thumbnails":
-                    # Skip old centralized structure
-                    continue
-                
-                # Check if parent is a test case folder
-                grandparent = parent_path.parent
-                if grandparent and grandparent.parent:
-                    # Should be: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/
-                    # Check if grandparent.parent is timestamp folder
-                    timestamp_folder = grandparent.parent
-                    if timestamp_folder.name and any(char.isdigit() for char in timestamp_folder.name):
-                        # This is correct structure, clear it
-                        import shutil
-                        shutil.rmtree(thumb_folder)
-                        cleared_count += 1
-                        print(f"[INFO] Cleared thumbnail folder: {thumb_folder}")
-            except Exception as e:
-                print(f"[WARN] Error clearing thumbnail folder {thumb_folder}: {e}")
-        
-        # Also clear old centralized structure if it exists
-        old_thumb_root = RESULTS_DIR / ".thumbnails"
-        if old_thumb_root.exists():
-            try:
-                import shutil
-                shutil.rmtree(old_thumb_root)
-                print(f"[INFO] Cleared old centralized thumbnail structure: {old_thumb_root}")
-            except Exception as e:
-                print(f"[WARN] Could not clear old centralized structure: {e}")
-        
-        if cleared_count > 0:
-            print(f"[INFO] Cleared {cleared_count} thumbnail folders")
-            print(f"[INFO] All thumbnails will be regenerated with new structure")
-        else:
-            print(f"[INFO] No thumbnail folders found to clear")
-        
-        return True
-    except Exception as e:
-        print(f"[ERROR] Failed to clear thumbnail cache: {e}")
-        return False
-
-def force_cleanup_and_restart():
-    """Force cleanup of all thumbnails and prepare for fresh start.
-    
-    NEW STRUCTURE: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/file_hash.png
-    """
-    try:
-        print("[FORCE_CLEANUP] Starting forced cleanup of all thumbnails...")
-        
-        # First, try normal cleanup
-        cleanup_success = cleanup_old_thumbnail_structure()
-        migration_success = migrate_old_thumbnails()
-        
-        # Then, clear everything if needed
-        clear_success = clear_thumbnail_cache()
-        
-        # REMOVED: No need to create fresh thumbnail directory
-        # Thumbnails will be created on-demand in their respective test case folders
-        
-        print(f"[FORCE_CLEANUP] All thumbnails have been cleared")
-        print(f"[FORCE_CLEANUP] New thumbnails will be created in TestCaseID/.thumbnails/ when needed")
-        
-        return {
-            "cleanup_success": cleanup_success,
-            "migration_success": migration_success,
-            "clear_success": clear_success,
-            "message": "All thumbnails cleared, will be regenerated in new structure"
-        }
-    except Exception as e:
-        print(f"[ERROR] Force cleanup failed: {e}")
-        return {"error": str(e)}
-
 def get_thumbnail_info():
     """Get information about thumbnail cache usage.
     
@@ -3473,111 +3628,6 @@ def api_thumbnail_info():
     """API endpoint to get thumbnail cache information."""
     return jsonify(get_thumbnail_info())
 
-@app.route('/api/clear_thumbnails', methods=['POST'])
-def api_clear_thumbnails():
-    """API endpoint to clear thumbnail cache."""
-    success = clear_thumbnail_cache()
-    return jsonify({"success": success, "message": "Thumbnail cache cleared" if success else "Failed to clear cache"})
-
-def cleanup_old_thumbnail_structure():
-    """Clean up old thumbnail structure that doesn't follow the new organized format.
-    
-    NEW STRUCTURE: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/file_hash.png
-    OLD STRUCTURE: results/.thumbnails/YYYYMMDD_HHMMSS/FeatureName/file_hash.png
-    """
-    try:
-        # Clean up old centralized .thumbnails folder structure
-        old_thumb_root = RESULTS_DIR / ".thumbnails"
-        if old_thumb_root.exists():
-            try:
-                import shutil
-                shutil.rmtree(old_thumb_root)
-                print(f"[CLEANUP] Removed old centralized thumbnail structure: {old_thumb_root}")
-                print(f"[CLEANUP] New structure will be: TestCaseID/.thumbnails/ in each test case folder")
-            except Exception as e:
-                print(f"[WARN] Could not remove old thumbnail structure: {e}")
-        
-        # Clean up any orphaned .thumbnails folders in wrong locations
-        cleaned_orphans = 0
-        for item in RESULTS_DIR.rglob(".thumbnails"):
-            try:
-                # Check if this .thumbnails folder is in the correct location
-                # Should be: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/
-                parent_path = item.parent
-                if parent_path.name == ".thumbnails":
-                    # This is the old centralized structure, already cleaned above
-                    continue
-                
-                # Check if parent is a test case folder (should have timestamp/feature structure)
-                grandparent = parent_path.parent
-                if grandparent and grandparent.parent:
-                    # Should be: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/
-                    # Check if grandparent.parent is timestamp folder
-                    timestamp_folder = grandparent.parent
-                    if timestamp_folder.name and any(char.isdigit() for char in timestamp_folder.name):
-                        # This looks like correct structure, keep it
-                        continue
-                
-                # This .thumbnails folder is in wrong location, remove it
-                try:
-                    shutil.rmtree(item)
-                    cleaned_orphans += 1
-                    print(f"[CLEANUP] Removed orphaned .thumbnails folder: {item}")
-                except Exception as e:
-                    print(f"[WARN] Could not remove orphaned .thumbnails folder {item}: {e}")
-                    
-            except Exception as e:
-                print(f"[WARN] Error checking .thumbnails folder {item}: {e}")
-        
-        if cleaned_orphans > 0:
-            print(f"[CLEANUP] Cleaned up {cleaned_orphans} orphaned .thumbnails folders")
-        else:
-            print(f"[CLEANUP] No orphaned .thumbnails folders found")
-        
-        return True
-    except Exception as e:
-        print(f"[ERROR] Failed to cleanup old thumbnail structure: {e}")
-        return False
-
-def migrate_old_thumbnails():
-    """Attempt to migrate old thumbnails to new structure if possible.
-    
-    NEW STRUCTURE: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/file_hash.png
-    """
-    try:
-        # Since we're changing to a completely different structure,
-        # we can't reliably migrate old thumbnails. Just clean them up.
-        print(f"[MIGRATION] New structure requires complete regeneration of thumbnails")
-        print(f"[MIGRATION] Old thumbnails cannot be migrated, they will be regenerated on-demand")
-        
-        # Clean up any remaining old structure
-        old_thumb_root = RESULTS_DIR / ".thumbnails"
-        if old_thumb_root.exists():
-            try:
-                import shutil
-                shutil.rmtree(old_thumb_root)
-                print(f"[MIGRATION] Removed remaining old thumbnail structure")
-            except Exception as e:
-                print(f"[WARN] Could not remove remaining old structure: {e}")
-        
-        return True
-    except Exception as e:
-        print(f"[ERROR] Failed to migrate old thumbnails: {e}")
-        return False
-
-@app.route('/api/cleanup_old_thumbnails', methods=['POST'])
-def api_cleanup_old_thumbnails():
-    """API endpoint to cleanup old thumbnail structure."""
-    cleanup_success = cleanup_old_thumbnail_structure()
-    migration_success = migrate_old_thumbnails()
-    
-    return jsonify({
-        "success": cleanup_success and migration_success,
-        "cleanup_success": cleanup_success,
-        "migration_success": migration_success,
-        "message": "Old thumbnail cleanup completed" if (cleanup_success and migration_success) else "Some cleanup operations failed"
-    })
-
 @app.route('/api/thumbnail_status')
 def api_thumbnail_status():
     """API endpoint to get comprehensive thumbnail status including cleanup info."""
@@ -3612,16 +3662,42 @@ def api_thumbnail_status():
         }
     })
 
-@app.route('/api/force_cleanup_thumbnails', methods=['POST'])
-def api_force_cleanup_thumbnails():
-    """API endpoint to force cleanup all thumbnails and restart fresh."""
-    result = force_cleanup_and_restart()
-    return jsonify(result)
-
 if __name__ == "__main__":
     print("🚀 Starting Dashboard Report Server...")
     print(f"📁 Project Root: {PROJECT_ROOT}")
     print(f"📊 Results Directory: {RESULTS_DIR}")
+    
+    # Show results directory discovery status
+    print("\n" + "="*60)
+    print("RESULTS DIRECTORY DISCOVERY")
+    print("="*60)
+    if RESULTS_DIR.exists():
+        # Count valid timestamp folders
+        timestamp_dirs = [d for d in RESULTS_DIR.iterdir() 
+                         if d.is_dir() and is_valid_timestamp_folder(d.name)]
+        
+        print(f"✅ Results directory successfully discovered")
+        print(f"📂 Path: {RESULTS_DIR}")
+        print(f"📊 Contains {len(timestamp_dirs)} valid test run folders")
+        
+        if timestamp_dirs:
+            # Show latest 3 runs
+            latest_runs = sorted(timestamp_dirs, key=lambda d: d.name, reverse=True)[:3]
+            print(f"🔄 Latest runs:")
+            for run in latest_runs:
+                run_features = [d for d in run.iterdir() if d.is_dir()]
+                print(f"   • {run.name} ({len(run_features)} features)")
+        else:
+            print("⚠️ No test run data found in results directory")
+            print("   Place test results in YYYYMMDD-HHMMSS format folders")
+    else:
+        print(f"❌ Results directory not accessible: {RESULTS_DIR}")
+    
+    print("\n💡 Configuration options:")
+    print("   • Set environment variable RESULTS_DIR to override auto-discovery")
+    print("   • Place any project with 'results' folder under project root")
+    print("   • Results folder should contain timestamp folders (YYYYMMDD-HHMMSS)")
+    print("="*60)
     
     # Verify font settings
     verify_font_settings()
@@ -3666,22 +3742,6 @@ if __name__ == "__main__":
         print(f"📁 Thumbnails will be organized by test case folder structure")
         print(f"   NEW STRUCTURE: results/YYYYMMDD_HHMMSS/FeatureName/TestCaseID/.thumbnails/file_hash.png")
         
-        # Clean up old thumbnail structure
-        print("\n🧹 Cleaning up old thumbnail structure...")
-        cleanup_success = cleanup_old_thumbnail_structure()
-        if cleanup_success:
-            print("✅ Old thumbnail structure cleanup completed")
-        else:
-            print("⚠️ Old thumbnail structure cleanup had issues")
-        
-        # Attempt to migrate old thumbnails
-        print("🔄 Attempting to migrate old thumbnails...")
-        migration_success = migrate_old_thumbnails()
-        if migration_success:
-            print("✅ Old thumbnail migration completed")
-        else:
-            print("⚠️ Old thumbnail migration had issues")
-        
         # Test structured thumbnail creation
         try:
             test_html_path = RESULTS_DIR / "test_example.html"
@@ -3709,4 +3769,4 @@ if __name__ == "__main__":
     Timer(1.5, open_browser).start()
     
     # Start the Flask app
-    app.run(debug=False, host='127.0.0.1', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)

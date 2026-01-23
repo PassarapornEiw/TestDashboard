@@ -115,7 +115,7 @@ const timestampHeader = `
     <tr>
         <th style="width: 20%; text-align: left;">Run Timestamp</th>
         <th style="width: 12%; text-align: center;">Status</th>
-        <th style="width: 25%; text-align: center;">Summary (Total) Passed/Failed Major/Failed Blocker</th>
+        <th style="width: 25%; text-align: center;">Summary (Total) Passed/Failed (Major)/Failed (Block)</th>
         <th style="width: 12%; text-align: center;">Pass Rate</th>
         <th style="width: 31%; text-align: center;">Reports & Actions</th>
     </tr>
@@ -363,7 +363,7 @@ function initializePieChart() {
     pieChart = new Chart(ctx, {
         type: 'pie',
         data: {
-            labels: ['Passed', 'FAIL (Major)', 'FAIL (Blocker)'],
+            labels: ['Passed', 'FAIL (Major)', 'FAIL (Block)'],
             datasets: [{
                 data: [0, 0, 0],
                 backgroundColor: ['#28a745', '#ff5722', '#e51c23'],
@@ -473,7 +473,7 @@ function updatePieChart() {
     const failedBlocker = currentData.failed_blocker || 0;
     
     // Update chart data for 3 statuses
-    pieChart.data.labels = ['Passed', 'FAIL (Major)', 'FAIL (Blocker)'];
+    pieChart.data.labels = ['Passed', 'FAIL (Major)', 'FAIL (Block)'];
     pieChart.data.datasets[0].data = [passed, failedMajor, failedBlocker];
     pieChart.data.datasets[0].backgroundColor = ['#28a745', '#ff5722', '#e51c23'];
     
@@ -506,7 +506,7 @@ function renderTimestampAccordion() {
             statusText = 'UNKNOWN';
         } else if (run.status === 'failed_blocker') {
             statusClass = 'status-failed-blocker';
-            statusText = 'FAIL (Blocker)';
+            statusText = 'FAIL (Block)';
         } else if (run.status === 'failed_major') {
             statusClass = 'status-failed-major';
             statusText = 'FAIL (Major)';
@@ -515,7 +515,7 @@ function renderTimestampAccordion() {
             const hasBlocker = run.features && run.features.some(f => f.failed_blocker > 0);
             if (hasBlocker) {
                 statusClass = 'status-failed-blocker';
-                statusText = 'FAIL (Blocker)';
+                statusText = 'FAIL (Block)';
             } else {
                 statusClass = 'status-failed-major';
                 statusText = 'FAIL (Major)';
@@ -547,7 +547,7 @@ function renderTimestampAccordion() {
             html += `<table class="sub-table"><thead><tr>
                         <th style="text-align: left;">Feature Name</th>
                         <th style="text-align: center;">Status</th>
-                        <th style="text-align: center;">Summary (Total) Passed/Failed Major/Failed Blocker</th>
+                        <th style="text-align: center;">Summary (Total) Passed/Failed (Major)/Failed (Block)</th>
                         <th style="text-align: center;">Pass Rate</th>
                         <th style="text-align: center;">Actions</th>
                     </tr></thead><tbody>`;
@@ -562,7 +562,7 @@ function renderTimestampAccordion() {
                     featureStatusText = 'UNKNOWN';
                 } else if (feature.status === 'failed_blocker') {
                     featureStatusClass = 'status-failed-blocker';
-                    featureStatusText = 'FAIL (Blocker)';
+                    featureStatusText = 'FAIL (Block)';
                 } else if (feature.status === 'failed_major') {
                     featureStatusClass = 'status-failed-major';
                     featureStatusText = 'FAIL (Major)';
@@ -570,7 +570,7 @@ function renderTimestampAccordion() {
                     // Fallback for legacy 'failed' status
                     if (feature.failed_blocker > 0) {
                         featureStatusClass = 'status-failed-blocker';
-                        featureStatusText = 'FAIL (Blocker)';
+                        featureStatusText = 'FAIL (Block)';
                     } else {
                         featureStatusClass = 'status-failed-major';
                         featureStatusText = 'FAIL (Major)';
@@ -671,7 +671,7 @@ function renderFeatureAccordion() {
             latestStatusText = 'UNKNOWN';
         } else if (latestRun.status === 'failed_blocker') {
             latestStatusClass = 'status-failed-blocker';
-            latestStatusText = 'FAIL (Blocker)';
+            latestStatusText = 'FAIL (Block)';
         } else if (latestRun.status === 'failed_major') {
             latestStatusClass = 'status-failed-major';
             latestStatusText = 'FAIL (Major)';
@@ -679,7 +679,7 @@ function renderFeatureAccordion() {
             // Fallback for legacy 'failed' status
             if (latestRun.failed_blocker > 0) {
                 latestStatusClass = 'status-failed-blocker';
-                latestStatusText = 'FAIL (Blocker)';
+                latestStatusText = 'FAIL (Block)';
             } else {
                 latestStatusClass = 'status-failed-major';
                 latestStatusText = 'FAIL (Major)';
@@ -701,7 +701,7 @@ function renderFeatureAccordion() {
                     <table class="sub-table"><thead><tr>
                         <th style="text-align: left;">Run Timestamp</th>
                         <th style="text-align: center;">Status</th>
-                        <th style="text-align: center;">Summary (Total) Passed/Failed Major/Failed Blocker</th>
+                        <th style="text-align: center;">Summary (Total) Passed/Failed (Major)/Failed (Block)</th>
                         <th style="text-align: center;">Pass Rate</th>
                         <th style="text-align: center;">Actions</th>
                     </tr></thead><tbody>`;
@@ -717,7 +717,7 @@ function renderFeatureAccordion() {
                 featureStatusText = 'UNKNOWN';
             } else if (featureRun.status === 'failed_blocker') {
                 featureStatusClass = 'status-failed-blocker';
-                featureStatusText = 'FAIL (Blocker)';
+                featureStatusText = 'FAIL (Block)';
             } else if (featureRun.status === 'failed_major') {
                 featureStatusClass = 'status-failed-major';
                 featureStatusText = 'FAIL (Major)';
@@ -725,7 +725,7 @@ function renderFeatureAccordion() {
                 // Fallback for legacy 'failed' status
                 if (featureRun.failed_blocker > 0) {
                     featureStatusClass = 'status-failed-blocker';
-                    featureStatusText = 'FAIL (Blocker)';
+                    featureStatusText = 'FAIL (Block)';
                 } else {
                     featureStatusClass = 'status-failed-major';
                     featureStatusText = 'FAIL (Major)';
@@ -822,7 +822,7 @@ async function viewFeatureDetailsInRun(runIndex, featureIndex) {
         statusText = 'UNKNOWN';
     } else if (feature.status === 'failed_blocker') {
         statusClass = 'status-failed-blocker';
-        statusText = 'FAIL (Blocker)';
+        statusText = 'FAIL (Block)';
     } else if (feature.status === 'failed_major') {
         statusClass = 'status-failed-major';
         statusText = 'FAIL (Major)';
@@ -830,7 +830,7 @@ async function viewFeatureDetailsInRun(runIndex, featureIndex) {
         // Fallback for legacy 'failed' status
         if (feature.failed_blocker > 0) {
             statusClass = 'status-failed-blocker';
-            statusText = 'FAIL (Blocker)';
+            statusText = 'FAIL (Block)';
         } else {
             statusClass = 'status-failed-blocker';
             statusText = 'FAIL (Major)';
@@ -847,7 +847,7 @@ async function viewFeatureDetailsInRun(runIndex, featureIndex) {
             <h4>Test Data & Results File</h4>
             <p>${feature.excel_path.split('/').pop()}</p>
             <button class="btn btn-secondary" onclick="previewExcel('${feature.excel_path}', '${excelPreviewId}')">📄 Preview</button>
-            <a href="/results/${feature.excel_path.replace(/^results[\\/]/, '')}" download class="btn btn-primary">⬇️ Download</a>
+            <a href="/results/${feature.excel_path.replace(/^Automation Project[\\/]/, '').replace(/^results[\\/]/, '')}" download class="btn btn-primary">⬇️ Download</a>
             <div id="${excelPreviewId}" class="excel-preview-container mt-20"></div>
         </div>
     `;
@@ -865,7 +865,7 @@ async function viewFeatureDetailsInRun(runIndex, featureIndex) {
                 <span class="stat-total">📊 Total: <strong>${feature.total}</strong></span>
                 <span class="stat-passed">✅ Passed: <strong>${feature.passed}</strong></span>
                 <span class="stat-failed-major">⚠️ FAIL (Major): <strong>${feature.failed_major || 0}</strong></span>
-                <span class="stat-failed-blocker">🚫 FAIL (Blocker): <strong>${feature.failed_blocker || 0}</strong></span>
+                <span class="stat-failed-blocker">🚫 FAIL (Block): <strong>${feature.failed_blocker || 0}</strong></span>
                 <span class="stat-rate">📈 Pass Rate: <strong>${passRate}%</strong></span>
             </div>
         </div>
@@ -973,7 +973,7 @@ function getDescriptionFromExcelData(excelData, testCaseId) {
     
     // Find relevant columns
     const idColumns = ['Test Case ID', 'TestCaseID', 'Test Case', 'ID', 'TestCase', 'TestCaseNo'];
-    const descColumns = ['Test Case Description', 'TestCaseDescription', 'Description', 'Test Description', 'Name'];
+    const descColumns = ['Test Case Description', 'TestCaseDescription', 'Description', 'Test Description', 'Name', 'TestCaseDesc'];
     
     const idCol = excelData.headers.find(h => idColumns.includes(h));
     const descCol = excelData.headers.find(h => descColumns.includes(h));
@@ -1072,8 +1072,8 @@ async function generateTestCaseGallery(feature, testCaseDetails, galleryId) {
             statusBadge = '<span class="status-badge test-case-badge status-passed">PASS</span>';
         } else if (status === 'fail (major)') {
             statusBadge = '<span class="status-badge test-case-badge status-failed-major">FAIL (Major)</span>';
-        } else if (status === 'fail (blocker)') {
-            statusBadge = '<span class="status-badge test-case-badge status-failed-blocker">FAIL (Blocker)</span>';
+        } else if (status === 'fail (block)') {
+            statusBadge = '<span class="status-badge test-case-badge status-failed-blocker">FAIL (Block)</span>';
         } else if (status === 'fail') {
             // Default to major for legacy 'fail' status
             statusBadge = '<span class="status-badge test-case-badge status-failed-major">FAIL (Major)</span>';
@@ -1123,6 +1123,18 @@ async function generateTestCaseGallery(feature, testCaseDetails, galleryId) {
                 }
                 return true; // Show all valid images including PDFs
             });
+
+            // code เรียงลำดับตรงนี้
+            validImages.sort((a, b) => {
+                const fileNameA = a.split('/').pop();
+                const fileNameB = b.split('/').pop();
+                
+                // ดึงตัวเลขด้านหน้าออกมา
+                const numA = parseInt(fileNameA.match(/^(\d+)/)?.[1] || '0');
+                const numB = parseInt(fileNameB.match(/^(\d+)/)?.[1] || '0');
+                
+                return numA - numB;
+            });
             
             if (validImages.length > 0) {
                 const maxPreviewImages = 3; // แสดง 3 รูปแรก
@@ -1142,10 +1154,16 @@ async function generateTestCaseGallery(feature, testCaseDetails, galleryId) {
                     // Fix image path for serving
                     let fixedPath = imgPath;
                     if (!imgPath.startsWith('/results/')) {
-                        if (imgPath.startsWith('results/')) {
-                            fixedPath = '/' + imgPath;
+                        // Strip optional 'Automation Project/' prefix if present
+                        if (imgPath.startsWith('Automation Project/')) {
+                            fixedPath = imgPath.replace(/^Automation Project[\\/]/, '');
                         } else {
-                            fixedPath = '/results/' + imgPath;
+                            fixedPath = imgPath;
+                        }
+                        if (fixedPath.startsWith('results/')) {
+                            fixedPath = '/' + fixedPath;
+                        } else {
+                            fixedPath = '/results/' + fixedPath;
                         }
                     }
                     
@@ -1187,7 +1205,7 @@ async function generateTestCaseGallery(feature, testCaseDetails, galleryId) {
                         // Regular images
                         screenshotGalleryHtml += `
                             <a href="${fixedPath}" class="gallery-item gallery-item-image" data-type="image" data-sub-html="<h4>${imgFileName}</h4>" data-lg-size="1600-1200">
-                                <img src="${thumbSrc}" alt="Test Evidence for ${actualFolderName}: ${imgFileName}" loading="lazy" />
+                                <img src="${thumbSrc}" alt="Test Evidence for ${actualFolderName}: ${imgFileName}" loading="lazy" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjE1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjVmNWY1Ii8+PGNpcmNsZSBjeD0iMTAwIiBjeT0iNjAiIHI9IjI1IiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI3MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxMiIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+4LiE4Lil4Li04LiB4LmA4Lie4Li34LmI4Lit4LmC4Lir4Lil4LiU4Lij4Li54LiUIHvvv788L3RleHQ+PC9zdmc+';" />
                                 <div class="gallery-item-info">
                                     <span>${imgFileName}</span>
                                     <br><small>Test Case: ${actualFolderName}</small>
@@ -1565,7 +1583,7 @@ function renderLatestRunInfo() {
         status = 'UNKNOWN';
         statusClass = 'status-not-run';
     } else if (currentData.status === 'failed_blocker') {
-        status = 'FAILED (Blocker)';
+        status = 'FAILED (Block)';
         statusClass = 'status-failed-blocker';
     } else if (currentData.status === 'failed_major' || currentData.status === 'failed') {
         status = 'FAILED (Major)';
@@ -1796,6 +1814,11 @@ async function openAllImagesFromData(element) {
             // Fix path for serving
             let fixedPath = imgPath.trim();
             
+            // Strip optional 'Automation Project/' prefix if present before adding /results/
+            if (fixedPath.startsWith('Automation Project/')) {
+                fixedPath = fixedPath.replace(/^Automation Project[\\/]/, '');
+            }
+            
             // Ensure proper /results/ prefix
             if (!fixedPath.startsWith('/results/')) {
                 if (fixedPath.startsWith('results/')) {
@@ -1941,7 +1964,8 @@ function showAllImagesModal(testCaseName, images, status, actualFolderName = nul
     const displayName = actualFolderName || testCaseName;
     
     const statusBadge = status === 'pass' ? '<span class="status-badge status-passed">PASS</span>' :
-                         status === 'fail' ? '<span class="status-badge status-failed">FAIL</span>' :
+                         status === 'fail (major)' ? '<span class="status-badge status-failed-major">FAIL (Major)</span>' :
+                         status === 'fail (block)' ? '<span class="status-badge status-failed-blocker">FAIL (Block)</span>' :
                          '<span class="status-badge status-not-run">UNKNOWN</span>';
     
     // Create simple gallery HTML without complex attributes initially
@@ -1949,7 +1973,9 @@ function showAllImagesModal(testCaseName, images, status, actualFolderName = nul
         if (!rawPath || typeof rawPath !== 'string') return '';
         let fixedPath = rawPath;
         if (!rawPath.startsWith('/results/')) {
-            fixedPath = rawPath.startsWith('results/') ? ('/' + rawPath) : ('/results/' + rawPath.replace(/^\//, ''));
+            // Strip optional 'Automation Project/' prefix if present
+            const stripped = rawPath.startsWith('Automation Project/') ? rawPath.replace(/^Automation Project[\\/]/, '') : rawPath;
+            fixedPath = stripped.startsWith('results/') ? ('/' + stripped) : ('/results/' + stripped.replace(/^\//, ''));
         }
         const imgFileName = fixedPath.split('/').pop();
         const fileExt = fixedPath.toLowerCase();
