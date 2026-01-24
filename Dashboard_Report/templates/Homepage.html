@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QA Manager - Select Project</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #f5d547 0%, #f0c419 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+
+        .header h1 {
+            font-size: 3em;
+            color: #8b4513;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        .header p {
+            font-size: 1.2em;
+            color: #664400;
+        }
+
+        .projects-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 30px;
+            margin-top: 40px;
+        }
+
+        .project-card {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .project-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 30px rgba(0,0,0,0.15);
+        }
+
+        .project-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 5px;
+            background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%);
+        }
+
+        .project-icon {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 30px;
+            margin-bottom: 20px;
+        }
+
+        .project-name {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .project-stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .stat-label {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .stat-passed {
+            color: #22c55e;
+        }
+
+        .stat-failed {
+            color: #ef4444;
+        }
+
+        .stat-rate {
+            color: #3b82f6;
+        }
+
+        .last-run {
+            font-size: 0.85em;
+            color: #888;
+            margin-top: 15px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: #664400;
+            font-size: 1.2em;
+        }
+
+        .loading::after {
+            content: '...';
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
+        }
+
+        .error-message {
+            text-align: center;
+            padding: 40px 20px;
+            color: #ef4444;
+            font-size: 1.1em;
+            background: white;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+
+        .no-projects {
+            text-align: center;
+            padding: 60px 20px;
+            color: #664400;
+            font-size: 1.2em;
+            background: white;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                <span>🧪</span>
+                Test Automation Projects
+            </h1>
+            <p>เลือก Project เพื่อดูผลการทดสอบ</p>
+        </div>
+
+        <div id="loading" class="loading">กำลังโหลดข้อมูล</div>
+        <div id="error" class="error-message" style="display: none;"></div>
+        <div id="no-projects" class="no-projects" style="display: none;">
+            ไม่พบ Project ที่มีผลการทดสอบ
+        </div>
+
+        <div id="projects-grid" class="projects-grid" style="display: none;">
+            <!-- Projects will be dynamically inserted here -->
+        </div>
+    </div>
+
+    <script>
+        // Icons for projects (cycling through available icons)
+        const projectIcons = ['🧪', '📱', '🛒', '💳', '👤', '📊', '🔐', '⚙️', '🚀', '🎯'];
+
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return 'ไม่มีข้อมูล';
+            
+            // Format: YYYYMMDD-HHMMSS or YYYYMMDD_HHMMSS
+            const separator = timestamp.includes('-') ? '-' : '_';
+            const parts = timestamp.split(separator);
+            
+            if (parts.length !== 2) return timestamp;
+            
+            const datePart = parts[0];
+            const timePart = parts[1];
+            
+            if (datePart.length !== 8 || timePart.length !== 6) return timestamp;
+            
+            // Format: DD/MM/YYYY HH:MM:SS
+            const year = datePart.substring(0, 4);
+            const month = datePart.substring(4, 6);
+            const day = datePart.substring(6, 8);
+            const hour = timePart.substring(0, 2);
+            const minute = timePart.substring(2, 4);
+            const second = timePart.substring(4, 6);
+            
+            return `${day}/${month}/${year} ${hour}:${minute}:${second}`;
+        }
+
+        function getProjectIcon(index) {
+            return projectIcons[index % projectIcons.length];
+        }
+
+        function openDashboard(projectName) {
+            // Navigate to dashboard with project parameter
+            window.location.href = '/dashboard?project=' + encodeURIComponent(projectName);
+        }
+
+        function renderProjects(projects) {
+            const grid = document.getElementById('projects-grid');
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const noProjects = document.getElementById('no-projects');
+
+            // Hide loading and error messages
+            loading.style.display = 'none';
+            error.style.display = 'none';
+            noProjects.style.display = 'none';
+
+            if (!projects || projects.length === 0) {
+                noProjects.style.display = 'block';
+                return;
+            }
+
+            // Clear existing content
+            grid.innerHTML = '';
+
+            // Render each project
+            projects.forEach((project, index) => {
+                const stats = project.stats || {};
+                const passRate = stats.pass_rate || 0;
+                const totalTests = stats.total_tests || 0;
+                const lastRun = formatTimestamp(stats.last_run);
+
+                const card = document.createElement('div');
+                card.className = 'project-card';
+                card.onclick = () => openDashboard(project.name);
+
+                // Determine pass rate color
+                let passRateClass = 'stat-rate';
+                if (passRate >= 80) {
+                    passRateClass = 'stat-passed';
+                } else if (passRate < 50) {
+                    passRateClass = 'stat-failed';
+                }
+
+                card.innerHTML = `
+                    <div class="project-icon">${getProjectIcon(index)}</div>
+                    <div class="project-name">${project.name}</div>
+                    <div class="project-stats">
+                        <div class="stat-item">
+                            <div class="stat-value ${passRateClass}">${passRate}%</div>
+                            <div class="stat-label">Pass Rate</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">${totalTests}</div>
+                            <div class="stat-label">Total Tests</div>
+                        </div>
+                    </div>
+                    <div class="last-run">Last Run: ${lastRun}</div>
+                `;
+
+                grid.appendChild(card);
+            });
+
+            grid.style.display = 'grid';
+        }
+
+        // Fetch projects on page load
+        async function loadProjects() {
+            try {
+                const response = await fetch('/api/projects');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                renderProjects(data.projects || []);
+            } catch (error) {
+                console.error('Error loading projects:', error);
+                const loading = document.getElementById('loading');
+                const errorDiv = document.getElementById('error');
+                loading.style.display = 'none';
+                errorDiv.textContent = 'เกิดข้อผิดพลาดในการโหลดข้อมูล: ' + error.message;
+                errorDiv.style.display = 'block';
+            }
+        }
+
+        // Load projects when page is ready
+        document.addEventListener('DOMContentLoaded', loadProjects);
+    </script>
+</body>
+</html>
