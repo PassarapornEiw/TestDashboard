@@ -1449,9 +1449,6 @@ async function exportTestCasePDF(testCaseId, featureName, runTimestamp) {
         };
         console.log('[DEBUG] Request payload:', requestData);
         
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/d9872d8c-abf2-46bb-8bd7-da8f17c0c60f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dashboard.js:1447',message:'Before fetch export_testcase_pdf',data:{url:'/api/export_testcase_pdf',requestData:requestData},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
         const response = await fetch('/api/export_testcase_pdf', {
             method: 'POST',
             headers: {
@@ -1462,21 +1459,12 @@ async function exportTestCasePDF(testCaseId, featureName, runTimestamp) {
 
         console.log(`[DEBUG] Response status: ${response.status}`);
         console.log(`[DEBUG] Response headers:`, Object.fromEntries(response.headers.entries()));
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/d9872d8c-abf2-46bb-8bd7-da8f17c0c60f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dashboard.js:1455',message:'Response received',data:{status:response.status,ok:response.ok,contentType:response.headers.get('content-type')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
 
         if (!response.ok) {
             console.error(`[ERROR] HTTP error ${response.status}`);
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/d9872d8c-abf2-46bb-8bd7-da8f17c0c60f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dashboard.js:1458',message:'Response not ok',data:{status:response.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-            // #endregion
             try {
                 const errorData = await response.json();
                 console.error('[ERROR] Error response data:', errorData);
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/d9872d8c-abf2-46bb-8bd7-da8f17c0c60f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dashboard.js:1461',message:'Error data parsed',data:{errorData:errorData},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-                // #endregion
                 
                 // Special handling for large file errors
                 if (response.status === 413) {
@@ -1486,16 +1474,10 @@ async function exportTestCasePDF(testCaseId, featureName, runTimestamp) {
                 throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
             } catch (parseError) {
                 console.error('[ERROR] Failed to parse error response:', parseError);
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/d9872d8c-abf2-46bb-8bd7-da8f17c0c60f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dashboard.js:1471',message:'Parse error - trying text()',data:{parseError:parseError.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-                // #endregion
                 // FIX: Clone response before reading to avoid "body stream already read"
                 const responseClone = response.clone();
                 const errorText = await responseClone.text();
                 console.error('[ERROR] Raw error response:', errorText);
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/d9872d8c-abf2-46bb-8bd7-da8f17c0c60f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dashboard.js:1474',message:'Error text read',data:{errorText:errorText.substring(0,200)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-                // #endregion
                 
                 if (response.status === 413) {
                     throw new Error(`PDF ขนาดใหญ่เกินไป (${response.status}). โปรดติดต่อผู้ดูแลระบบ`);
@@ -1506,9 +1488,6 @@ async function exportTestCasePDF(testCaseId, featureName, runTimestamp) {
         }
 
         const blob = await response.blob();
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/d9872d8c-abf2-46bb-8bd7-da8f17c0c60f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dashboard.js:1483',message:'Blob received',data:{blobSize:blob.size,blobType:blob.type},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
         console.log(`[DEBUG] PDF blob received. Size: ${blob.size} bytes, Type: ${blob.type}`);
         
         const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
@@ -1540,9 +1519,6 @@ async function downloadAllTestCasesPDF(featureName, runTimestamp, runIndex, feat
         btn.innerHTML = '⏳ Generating ZIP...';
         btn.disabled = true;
 
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/d9872d8c-abf2-46bb-8bd7-da8f17c0c60f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dashboard.js:1516',message:'Before fetch export_feature_pdfs_zip',data:{url:'/api/export_feature_pdfs_zip',featureName:featureName,runTimestamp:runTimestamp},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
         // Get project from URL if available
         const urlParams = new URLSearchParams(window.location.search);
         const project = urlParams.get('project');
@@ -1561,14 +1537,8 @@ async function downloadAllTestCasesPDF(featureName, runTimestamp, runIndex, feat
                 project: project
             })
         });
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/d9872d8c-abf2-46bb-8bd7-da8f17c0c60f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dashboard.js:1528',message:'Response received for ZIP',data:{status:response.status,ok:response.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
 
         if (!response.ok) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/d9872d8c-abf2-46bb-8bd7-da8f17c0c60f',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'dashboard.js:1530',message:'ZIP response not ok',data:{status:response.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-            // #endregion
             const errorData = await response.json();
             throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
         }
@@ -1628,10 +1598,10 @@ function renderLatestRunInfo() {
         status = 'UNKNOWN';
         statusClass = 'status-not-run';
     } else if (currentData.status === 'failed_blocker') {
-        status = 'FAILED (Block)';
+        status = 'FAIL (Block)';
         statusClass = 'status-failed-blocker';
     } else if (currentData.status === 'failed_major' || currentData.status === 'failed') {
-        status = 'FAILED (Major)';
+        status = 'FAIL (Major)';
         statusClass = 'status-failed-major';
     }
     

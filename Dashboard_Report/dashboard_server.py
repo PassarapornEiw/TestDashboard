@@ -231,6 +231,9 @@ class EvidenceProcessor:
         Excel files will sort after media files (True > False).
         Files are sorted by leading number, then by filename.
         
+        For HTML screenshots (_preview.png), the sort key is based on the original
+        HTML filename to maintain consistent sorting order.
+        
         Args:
             file_path: Relative or absolute path to evidence file
             
@@ -243,6 +246,15 @@ class EvidenceProcessor:
         filename = Path(file_path).name.lower()
         ext = Path(file_path).suffix.lower()
         
+        # Handle both HTML screenshots (_preview.png) and HTML paths (lazy mode)
+        if '_preview.png' in filename:
+            # PNG screenshot: extract original HTML filename for sorting
+            filename = filename.replace('_preview.png', '.html')
+            ext = '.html'
+        elif filename.endswith(('.html', '.htm')):
+            # HTML path (lazy mode): use HTML filename for sorting
+            ext = '.html'
+        
         # Excel files go last (is_excel=True sorts after False)
         is_excel = ext in EvidenceProcessor.EXCEL_EXTENSIONS
         
@@ -253,24 +265,104 @@ class EvidenceProcessor:
         return (is_excel, number, filename)
     
     @staticmethod
-    def collect_and_sort_evidence(evidence_list: list) -> list:
-        """Sort evidence files: media files by number first, Excel files last by name.
+    def process_html_to_screenshot(evidence_list: list, project_root: Path = None, lazy: bool = True) -> list:
+        """Process HTML files: return PNG paths (lazy generation).
+        
+        This method converts HTML files to PNG screenshots on-demand and replaces
+        HTML paths with PNG paths in the evidence list.
+        
+        If lazy=True: Only return expected PNG path without generating screenshot.
+                      If screenshot already exists (cached), use it. Otherwise, return HTML path.
+        If lazy=False: Generate screenshot immediately (for PDF generation).
+        
+        Args:
+            evidence_list: List of evidence file paths (relative to PROJECT_ROOT)
+            project_root: Path to project root (defaults to global PROJECT_ROOT)
+            lazy: If True, don't generate screenshots immediately (for homepage).
+                  If False, generate screenshots immediately (for PDF).
+            
+        Returns:
+            List of evidence paths with HTML files replaced by their PNG screenshots (if available)
+        """
+        if project_root is None:
+            project_root = PROJECT_ROOT
+        
+        processed_list = []
+        for evidence_path in evidence_list:
+            if not evidence_path:
+                continue
+                
+            try:
+                abs_path = project_root / evidence_path
+                if not abs_path.exists():
+                    # Skip non-existent files
+                    continue
+                    
+                file_ext = abs_path.suffix.lower()
+                if file_ext in ['.html', '.htm']:
+                    if lazy:
+                        # Lazy mode: just return expected PNG path without generating
+                        expected_png_path = _get_thumbnail_path(abs_path)
+                        if expected_png_path.exists():
+                            # Screenshot already exists (cached), use it
+                            png_relative = str(expected_png_path.relative_to(project_root)).replace('\\', '/')
+                            processed_list.append(png_relative)
+                            print(f"[DEBUG] HTML using cached screenshot: {evidence_path} -> {png_relative}")
+                        else:
+                            # Screenshot doesn't exist yet, return HTML path
+                            # It will be generated when /api/evidence_thumbnail is called
+                            processed_list.append(evidence_path)
+                            print(f"[DEBUG] HTML screenshot not yet generated (lazy mode): {evidence_path}")
+                    else:
+                        # Eager mode: generate screenshot immediately (for PDF)
+                        png_path = EvidenceProcessor.ensure_thumbnail_exists(abs_path)
+                        if png_path != abs_path and png_path.exists():
+                            # Replace HTML path with PNG path
+                            png_relative = str(png_path.relative_to(project_root)).replace('\\', '/')
+                            processed_list.append(png_relative)
+                            print(f"[DEBUG] HTML converted to screenshot: {evidence_path} -> {png_relative}")
+                        else:
+                            # Skip if capture failed
+                            print(f"[WARN] HTML screenshot capture failed for {evidence_path}, skipping")
+                            continue
+                else:
+                    # Keep original path for non-HTML files
+                    processed_list.append(evidence_path)
+            except Exception as e:
+                print(f"[WARN] Error processing evidence {evidence_path}: {e}")
+                # Continue with other files even if one fails
+                continue
+        
+        return processed_list
+    
+    @staticmethod
+    def collect_and_sort_evidence(evidence_list: list, project_root: Path = None, lazy: bool = True) -> list:
+        """Sort evidence files and convert HTML files to PNG screenshots.
         
         Sorting order:
-        1. Media files (images, HTML) sorted by leading number in filename
+        1. Media files (images, HTML screenshots) sorted by leading number in filename
         2. Excel files sorted alphabetically by filename, always at the end
         
         Args:
             evidence_list: List of evidence file paths (relative to PROJECT_ROOT)
+            project_root: Path to project root (defaults to global PROJECT_ROOT)
+            lazy: If True, don't generate screenshots immediately (for homepage).
+                  If False, generate screenshots immediately (for PDF).
             
         Returns:
-            Sorted list of evidence file paths
+            Sorted list of evidence file paths (HTML files replaced by PNG screenshots if available)
         """
         if not evidence_list:
             return []
         
+        if project_root is None:
+            project_root = PROJECT_ROOT
+        
+        # Process HTML files first (capture screenshots and replace with PNG paths)
+        processed_list = EvidenceProcessor.process_html_to_screenshot(evidence_list, project_root, lazy=lazy)
+        
         # Sort using extract_sort_key
-        sorted_evidence = sorted(evidence_list, key=EvidenceProcessor.extract_sort_key)
+        sorted_evidence = sorted(processed_list, key=EvidenceProcessor.extract_sort_key)
         
         return sorted_evidence
     
@@ -340,22 +432,9 @@ class EvidenceProcessor:
         if project_root is None:
             project_root = PROJECT_ROOT
         
-        # Sort evidence using centralized logic
-        sorted_evidence = EvidenceProcessor.collect_and_sort_evidence(evidence_list)
-        
-        # Ensure thumbnails exist for HTML files (this will cache them)
-        # Note: We don't modify the paths here, just ensure thumbnails are ready
-        for evidence_path in sorted_evidence:
-            if evidence_path:
-                try:
-                    abs_path = project_root / evidence_path
-                    if abs_path.exists():
-                        file_ext = abs_path.suffix.lower()
-                        if file_ext in ['.html', '.htm']:
-                            # Ensure thumbnail exists (will be generated if needed)
-                            EvidenceProcessor.ensure_thumbnail_exists(abs_path)
-                except Exception as e:
-                    print(f"[WARN] Error preparing evidence {evidence_path}: {e}")
+        # Sort evidence using centralized logic (HTML files already converted to PNG in collect_and_sort_evidence)
+        # Use lazy=False for PDF to ensure screenshots are generated immediately
+        sorted_evidence = EvidenceProcessor.collect_and_sort_evidence(evidence_list, project_root, lazy=False)
         
         return sorted_evidence
 
@@ -490,6 +569,41 @@ def normalize_test_status(status_series):
     
     normalized = normalized.replace(status_mapping, regex=True)
     return safe_str_lower(normalized)
+
+
+def normalize_status_for_display(status_raw):
+    """Normalize status for display in UI/PDF.
+    
+    Converts various status formats to standard display format:
+    - "PASS" / "pass" -> "PASS"
+    - "FAIL (MAJOR)" / "fail (major)" -> "FAIL (Major)"
+    - "FAIL (BLOCK)" / "fail (block)" -> "FAIL (Block)"
+    - "FAIL" / "fail" (legacy) -> "FAIL (Major)" (ตาม spec Section 8.2)
+    - Others -> "UNKNOWN"
+    
+    Args:
+        status_raw: Raw status value from Excel (string, None, or other)
+        
+    Returns:
+        Normalized status string in display format: "PASS", "FAIL (Major)", "FAIL (Block)", or "UNKNOWN"
+    """
+    if not status_raw:
+        return 'UNKNOWN'
+    
+    status_str = str(status_raw).strip()
+    status_lower = status_str.lower()
+    
+    if status_lower == 'pass':
+        return 'PASS'
+    elif status_lower in ['fail (major)', 'fail(major)', 'fail major']:
+        return 'FAIL (Major)'
+    elif status_lower in ['fail (block)', 'fail(block)', 'fail block', 'fail (blocker)', 'fail(blocker)', 'fail blocker']:
+        return 'FAIL (Block)'
+    elif status_lower in ['fail', 'failed']:
+        # Legacy 'fail' status defaults to Major (ตาม spec Section 8.2)
+        return 'FAIL (Major)'
+    else:
+        return 'UNKNOWN'
 
 # ============================================================================
 # END UTILITY CLASSES
@@ -1035,8 +1149,8 @@ def parse_excel_data(excel_path):
         if test_case_col:
             print(f"[DEBUG] Found TestCaseNo column: {test_case_col}")
         
-        # Evidence file patterns (exclude HTML files - screenshots already exist as PNG)
-        evidence_patterns = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.xlsx", "*.xls"]
+        # Evidence file patterns (HTML files will be converted to PNG screenshots automatically)
+        evidence_patterns = ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.xlsx", "*.xls", "*.html", "*.htm"]
         
         # Build test_evidence by reading ResultFolder from each row
         test_evidence = {}
@@ -1078,6 +1192,11 @@ def parse_excel_data(excel_path):
                     relative_paths = []
                     for evidence_path in evidence_files:
                         try:
+                            # Filter out _preview.png files - they are generated from HTML files and will be added during conversion
+                            if '_preview.png' in evidence_path.name.lower():
+                                print(f"[DEBUG] Skipping {evidence_path.name} - it's a generated screenshot from HTML file")
+                                continue
+                            
                             if PROJECT_ROOT in evidence_path.parents:
                                 relative_evidence_path = str(evidence_path.relative_to(PROJECT_ROOT)).replace("\\", "/")
                                 if relative_evidence_path:
@@ -1087,9 +1206,10 @@ def parse_excel_data(excel_path):
                         except Exception as e:
                             print(f"[ERROR] Could not process evidence path {evidence_path}: {e}")
                     
-                    # Sort evidence using centralized EvidenceProcessor
-                    test_evidence[test_case_id] = EvidenceProcessor.collect_and_sort_evidence(relative_paths)
-                    print(f"[DEBUG] Found {len(test_evidence[test_case_id])} evidence files for {test_case_id} in {result_folder} (sorted)")
+                    # Sort evidence using centralized EvidenceProcessor (with HTML-to-PNG conversion)
+                    # Use lazy=True for homepage to avoid generating screenshots immediately
+                    test_evidence[test_case_id] = EvidenceProcessor.collect_and_sort_evidence(relative_paths, PROJECT_ROOT, lazy=True)
+                    print(f"[DEBUG] Found {len(test_evidence[test_case_id])} evidence files for {test_case_id} in {result_folder} (sorted, HTML converted to screenshots)")
                 else:
                     print(f"[DEBUG] No evidence files found for {test_case_id} in {result_folder_path}")
         else:
@@ -2372,8 +2492,8 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
         # Use title_name for header
         test_case_name = title_name
         
-        # Process status
-        test_case_status = str(status_raw).strip().upper() if status_raw is not None else 'UNKNOWN'
+        # Process status - use normalize_status_for_display to ensure correct format
+        test_case_status = normalize_status_for_display(status_raw)
         error_message = str(error_message) if error_message is not None else ''
         expected_result = str(expected_result) if expected_result is not None else ''
         
@@ -2431,11 +2551,11 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
         if test_case_status == "PASS":
             status_color = colors.HexColor("#28a745")
             status_bg_color = colors.HexColor("#d4edda")
-        elif test_case_status == "FAIL (MAJOR)":
+        elif test_case_status == "FAIL (Major)":
             status_color = colors.HexColor("#ff5722")
             status_bg_color = colors.HexColor("#f8d7da")
-        elif test_case_status == "FAIL (BLOCK)":
-            status_color = colors.HexColor("#dc3545")
+        elif test_case_status == "FAIL (Block)":
+            status_color = colors.HexColor("#e51c23")
             status_bg_color = colors.HexColor("#f8d7da")
         else:
             status_color = colors.HexColor("#6c757d")
@@ -2944,11 +3064,6 @@ def generate_test_case_pdf_core(test_case_id, feature_name, run_timestamp, featu
 @app.route('/api/export_testcase_pdf', methods=['POST'])
 def export_testcase_pdf():
     """Export individual test case to PDF with detailed screenshots and information."""
-    # #region agent log
-    import json
-    with open(r'c:\Users\Eiw\Documents\Krungsri Tasks\.cursor\debug.log', 'a', encoding='utf-8') as f:
-        f.write(json.dumps({"id":"log_export_testcase_entry","timestamp":int(__import__('time').time()*1000),"location":"dashboard_server.py:2944","message":"export_testcase_pdf called","data":{"method":request.method,"path":request.path},"sessionId":"debug-session","runId":"run1","hypothesisId":"A"})+"\n")
-    # #endregion
     global RESULTS_DIR
     original_results_dir = RESULTS_DIR
     
@@ -2959,10 +3074,6 @@ def export_testcase_pdf():
     try:
         print("[DEBUG] Starting PDF export request...")
         data = request.get_json()
-        # #region agent log
-        with open(r'c:\Users\Eiw\Documents\Krungsri Tasks\.cursor\debug.log', 'a', encoding='utf-8') as f:
-            f.write(json.dumps({"id":"log_export_testcase_data","timestamp":int(__import__('time').time()*1000),"location":"dashboard_server.py:2953","message":"Request data received","data":{"data":data if data else None},"sessionId":"debug-session","runId":"run1","hypothesisId":"C"})+"\n")
-        # #endregion
         if not data:
             print("[ERROR] No JSON data provided in request")
             return jsonify({'error': 'No data provided'}), 400
@@ -2974,10 +3085,6 @@ def export_testcase_pdf():
         project_name = data.get('project') or request.args.get('project')
         
         print(f"[DEBUG] PDF export request params: test_case_id='{test_case_id}', feature_name='{feature_name}', run_timestamp='{run_timestamp}', project='{project_name}'")
-        # #region agent log
-        with open(r'c:\Users\Eiw\Documents\Krungsri Tasks\.cursor\debug.log', 'a', encoding='utf-8') as f:
-            f.write(json.dumps({"id":"log_export_testcase_params","timestamp":int(__import__('time').time()*1000),"location":"dashboard_server.py:2963","message":"Extracted parameters","data":{"test_case_id":test_case_id,"feature_name":feature_name,"run_timestamp":run_timestamp,"project_name":project_name,"all_present":bool(all([test_case_id, feature_name, run_timestamp]))},"sessionId":"debug-session","runId":"run1","hypothesisId":"C"})+"\n")
-        # #endregion
         
         if not all([test_case_id, feature_name, run_timestamp]):
             print(f"[ERROR] Missing required parameters: test_case_id={test_case_id}, feature_name={feature_name}, run_timestamp={run_timestamp}")
@@ -3000,16 +3107,8 @@ def export_testcase_pdf():
 
         # Find the specific test case data
         print(f"[DEBUG] Searching for test case data in {RESULTS_DIR}")
-        # #region agent log
-        with open(r'c:\Users\Eiw\Documents\Krungsri Tasks\.cursor\debug.log', 'a', encoding='utf-8') as f:
-            f.write(json.dumps({"id":"log_export_testcase_results_dir","timestamp":int(__import__('time').time()*1000),"location":"dashboard_server.py:2971","message":"RESULTS_DIR check","data":{"results_dir":str(RESULTS_DIR),"exists":RESULTS_DIR.exists(),"project_name":project_name},"sessionId":"debug-session","runId":"run1","hypothesisId":"E"})+"\n")
-        # #endregion
         all_excel_files = find_excel_files(RESULTS_DIR)
         print(f"[DEBUG] Found {len(all_excel_files)} Excel files to search")
-        # #region agent log
-        with open(r'c:\Users\Eiw\Documents\Krungsri Tasks\.cursor\debug.log', 'a', encoding='utf-8') as f:
-            f.write(json.dumps({"id":"log_export_testcase_excel_count","timestamp":int(__import__('time').time()*1000),"location":"dashboard_server.py:2972","message":"Excel files found","data":{"count":len(all_excel_files),"files":[str(f) for f in all_excel_files[:5]]},"sessionId":"debug-session","runId":"run1","hypothesisId":"E"})+"\n")
-        # #endregion
         target_feature_data = None
         
         for excel_file in all_excel_files:
@@ -3017,10 +3116,6 @@ def export_testcase_pdf():
             feature_data = parse_excel_data(excel_file)
             if feature_data:
                 print(f"[DEBUG] Excel file data: feature_name='{feature_data.get('feature_name')}', run_timestamp='{feature_data.get('run_timestamp')}'")
-                # #region agent log
-                with open(r'c:\Users\Eiw\Documents\Krungsri Tasks\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                    f.write(json.dumps({"id":"log_export_testcase_feature_match","timestamp":int(__import__('time').time()*1000),"location":"dashboard_server.py:2980","message":"Feature matching check","data":{"excel_file":str(excel_file),"found_feature":feature_data.get('feature_name'),"found_timestamp":feature_data.get('run_timestamp'),"requested_feature":feature_name,"requested_timestamp":run_timestamp,"name_match":feature_data.get("feature_name")==feature_name,"timestamp_match":feature_data.get("run_timestamp")==run_timestamp},"sessionId":"debug-session","runId":"run1","hypothesisId":"B"})+"\n")
-                # #endregion
                 if (feature_data.get("feature_name") == feature_name and 
                     feature_data.get("run_timestamp") == run_timestamp):
                     target_feature_data = feature_data
@@ -3031,10 +3126,6 @@ def export_testcase_pdf():
         
         if not target_feature_data:
             print(f"[ERROR] Test case not found: {test_case_id} in {feature_name} for timestamp {run_timestamp}")
-            # #region agent log
-            with open(r'c:\Users\Eiw\Documents\Krungsri Tasks\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                f.write(json.dumps({"id":"log_export_testcase_not_found","timestamp":int(__import__('time').time()*1000),"location":"dashboard_server.py:2989","message":"Feature not found - returning 404","data":{"test_case_id":test_case_id,"feature_name":feature_name,"run_timestamp":run_timestamp},"sessionId":"debug-session","runId":"run1","hypothesisId":"B"})+"\n")
-            # #endregion
             return jsonify({'error': f'Test case not found: {test_case_id} in {feature_name}'}), 404
 
         # Get Excel file for test case details
@@ -3157,11 +3248,6 @@ def export_testcase_pdf():
 @app.route('/api/export_feature_pdfs_zip', methods=['POST'])
 def export_feature_pdfs_zip():
     """Export all test case PDFs for a specific feature as a ZIP file."""
-    # #region agent log
-    import json
-    with open(r'c:\Users\Eiw\Documents\Krungsri Tasks\.cursor\debug.log', 'a', encoding='utf-8') as f:
-        f.write(json.dumps({"id":"log_export_zip_entry","timestamp":int(__import__('time').time()*1000),"location":"dashboard_server.py:3106","message":"export_feature_pdfs_zip called","data":{"method":request.method,"path":request.path},"sessionId":"debug-session","runId":"run1","hypothesisId":"A"})+"\n")
-    # #endregion
     global RESULTS_DIR
     original_results_dir = RESULTS_DIR
     
@@ -3170,10 +3256,6 @@ def export_feature_pdfs_zip():
         
     try:
         data = request.get_json()
-        # #region agent log
-        with open(r'c:\Users\Eiw\Documents\Krungsri Tasks\.cursor\debug.log', 'a', encoding='utf-8') as f:
-            f.write(json.dumps({"id":"log_export_zip_data","timestamp":int(__import__('time').time()*1000),"location":"dashboard_server.py:3113","message":"Request data received","data":{"data":data if data else None},"sessionId":"debug-session","runId":"run1","hypothesisId":"C"})+"\n")
-        # #endregion
         if not data:
             return jsonify({'error': 'No data provided'}), 400
             
@@ -3182,10 +3264,6 @@ def export_feature_pdfs_zip():
         run_index = data.get('run_index')
         feature_index = data.get('feature_index')
         project_name = data.get('project') or request.args.get('project')
-        # #region agent log
-        with open(r'c:\Users\Eiw\Documents\Krungsri Tasks\.cursor\debug.log', 'a', encoding='utf-8') as f:
-            f.write(json.dumps({"id":"log_export_zip_params","timestamp":int(__import__('time').time()*1000),"location":"dashboard_server.py:3122","message":"Extracted parameters","data":{"feature_name":feature_name,"run_timestamp":run_timestamp,"project_name":project_name,"all_present":bool(all([feature_name, run_timestamp]))},"sessionId":"debug-session","runId":"run1","hypothesisId":"C"})+"\n")
-        # #endregion
         
         if not all([feature_name, run_timestamp]):
             return jsonify({'error': 'Missing required parameters'}), 400
@@ -3207,19 +3285,10 @@ def export_feature_pdfs_zip():
 
         # Find the specific feature data
         all_excel_files = find_excel_files(RESULTS_DIR)
-        # #region agent log
-        with open(r'c:\Users\Eiw\Documents\Krungsri Tasks\.cursor\debug.log', 'a', encoding='utf-8') as f:
-            f.write(json.dumps({"id":"log_export_zip_excel_count","timestamp":int(__import__('time').time()*1000),"location":"dashboard_server.py:3126","message":"Excel files found","data":{"count":len(all_excel_files)},"sessionId":"debug-session","runId":"run1","hypothesisId":"E"})+"\n")
-        # #endregion
         target_feature_data = None
         
         for excel_file in all_excel_files:
             feature_data = parse_excel_data(excel_file)
-            if feature_data:
-                # #region agent log
-                with open(r'c:\Users\Eiw\Documents\Krungsri Tasks\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                    f.write(json.dumps({"id":"log_export_zip_feature_match","timestamp":int(__import__('time').time()*1000),"location":"dashboard_server.py:3131","message":"Feature matching check","data":{"found_feature":feature_data.get('feature_name'),"found_timestamp":feature_data.get('run_timestamp'),"requested_feature":feature_name,"requested_timestamp":run_timestamp,"name_match":feature_data.get("feature_name")==feature_name,"timestamp_match":feature_data.get("run_timestamp")==run_timestamp},"sessionId":"debug-session","runId":"run1","hypothesisId":"B"})+"\n")
-                # #endregion
             if (feature_data and 
                 feature_data.get("feature_name") == feature_name and 
                 feature_data.get("run_timestamp") == run_timestamp):
@@ -3227,10 +3296,6 @@ def export_feature_pdfs_zip():
                 break
         
         if not target_feature_data:
-            # #region agent log
-            with open(r'c:\Users\Eiw\Documents\Krungsri Tasks\.cursor\debug.log', 'a', encoding='utf-8') as f:
-                f.write(json.dumps({"id":"log_export_zip_not_found","timestamp":int(__import__('time').time()*1000),"location":"dashboard_server.py:3138","message":"Feature not found - returning 404","data":{"feature_name":feature_name,"run_timestamp":run_timestamp},"sessionId":"debug-session","runId":"run1","hypothesisId":"B"})+"\n")
-            # #endregion
             return jsonify({'error': f'Feature not found: {feature_name}'}), 404
 
         # Get Excel file for test case details

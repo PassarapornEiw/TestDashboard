@@ -136,10 +136,10 @@ Dashboard Report เป็นระบบแสดงผลและจัดก
 - แสดง Screenshot และ Evidence ซึ่งจะเอาจาก path ที่ระบุใน excel คอลัมภ์ "ResultFolder"
 - รองรับการดูภาพแบบ Gallery
 - **Centralized Sorting Logic**: ใช้ EvidenceProcessor สำหรับการเรียงลำดับไฟล์
-  - Media files (images) เรียงตามเลขนำหน้าในชื่อไฟล์
+  - Media files (images, HTML screenshots) เรียงตามเลขนำหน้าในชื่อไฟล์
   - Excel files แสดงท้ายสุดเสมอ (เรียงตามชื่อไฟล์)
 - แสดงข้อมูล Excel ที่เกี่ยวข้อง (แสดงใน Gallery และ PDF)
-- **Note**: HTML files ไม่ถูกแสดงเป็น evidence เนื่องจากมี screenshot PNG จาก automation อยู่แล้ว
+- **HTML Screenshot Display**: HTML files ถูก capture เป็น PNG screenshot อัตโนมัติและแสดงใน Gallery/PDF
 
 ### 3.2 Excel Preview
 **วัตถุประสงค์**: แสดงข้อมูล Excel ในรูปแบบตาราง
@@ -197,7 +197,7 @@ Dashboard Report เป็นระบบแสดงผลและจัดก
 - แสดงภาพแบบ Thumbnail
 - รองรับการแสดงผลแบบ Responsive
 - แสดงข้อมูลของแต่ละภาพ
-- **Note**: HTML files ไม่ถูกแสดงใน Gallery เนื่องจากมี screenshot PNG จาก automation อยู่แล้ว
+- **HTML Screenshot Display**: HTML files ถูก capture เป็น PNG screenshot และแสดงใน Gallery
 
 ### 4.2 LightGallery Integration
 **วัตถุประสงค์**: จัดการการแสดงภาพแบบ Advanced
@@ -282,26 +282,57 @@ Dashboard Report เป็นระบบแสดงผลและจัดก
 #### 6.3.1 EvidenceProcessor Class
 - **Centralized Evidence Processing**: ใช้ EvidenceProcessor class สำหรับจัดการ evidence files
 - **Methods**:
-  - `collect_and_sort_evidence()`: เรียงลำดับไฟล์ (media files ตามเลขนำหน้า, Excel files ท้ายสุด)
-  - `extract_sort_key()`: สร้าง sort key สำหรับการเรียงลำดับ
-  - `ensure_thumbnail_exists()`: ตรวจสอบและสร้าง thumbnail สำหรับ HTML files (legacy support)
-  - `prepare_evidence_for_pdf()`: เตรียม evidence พร้อม thumbnails สำหรับ PDF generation
-- **Evidence Collection**: HTML files ไม่ถูก collect เป็น evidence เนื่องจากมี screenshot PNG จาก automation อยู่แล้ว
+  - `collect_and_sort_evidence(evidence_list, project_root, lazy=True)`: เรียงลำดับไฟล์และจัดการ HTML files
+    - `lazy=True` (default): ไม่ generate screenshots ทันที (สำหรับ homepage) - ใช้ cached screenshots ถ้ามี หรือ return HTML path
+    - `lazy=False`: Generate screenshots ทันที (สำหรับ PDF generation)
+  - `process_html_to_screenshot(evidence_list, project_root, lazy=True)`: แปลง HTML files เป็น PNG screenshots
+    - `lazy=True`: ตรวจสอบ cached screenshot ถ้ามีใช้ ถ้าไม่มี return HTML path (จะ generate เมื่อเรียก `/api/evidence_thumbnail`)
+    - `lazy=False`: Generate screenshot ทันที
+  - `extract_sort_key()`: สร้าง sort key สำหรับการเรียงลำดับ (รองรับทั้ง HTML paths และ _preview.png files)
+  - `ensure_thumbnail_exists()`: ตรวจสอบและสร้าง screenshot สำหรับ HTML files (ใช้เมื่อ lazy=False)
+  - `prepare_evidence_for_pdf()`: เตรียม evidence พร้อม screenshots สำหรับ PDF generation (ใช้ lazy=False)
+- **Lazy Screenshot Generation**: HTML screenshots จะถูก generate เฉพาะเมื่อจำเป็น (on-demand) เพื่อเพิ่มประสิทธิภาพการโหลด homepage
 
 #### 6.3.2 Evidence File Types
 - **Supported Evidence Types**:
   - Image files: `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp` (screenshots จาก automation)
+  - HTML files: `.html`, `.htm` (ถูก capture เป็น PNG screenshot อัตโนมัติ)
   - Excel files: `.xlsx`, `.xls` (แสดงเป็น placeholder thumbnail)
-- **Excluded Types**:
-  - HTML files: ไม่ถูก collect เป็น evidence เนื่องจากมี screenshot PNG อยู่แล้ว
-- **Note**: HTML thumbnail generation code ยังคงอยู่ในระบบเพื่อรองรับ legacy แต่จะไม่ถูกเรียกใช้
+- **HTML Screenshot Behavior**:
+  - HTML files ถูก collect เป็น evidence
+  - **Lazy Generation Mode** (default สำหรับ homepage):
+    - ถ้า screenshot มีอยู่แล้ว (cached) → ใช้ PNG screenshot path
+    - ถ้ายังไม่มี screenshot → return HTML path เดิม (จะถูก generate เมื่อเรียก `/api/evidence_thumbnail`)
+    - ไม่ generate screenshots ตอนโหลด homepage เพื่อเพิ่มประสิทธิภาพ
+  - **Eager Generation Mode** (สำหรับ PDF):
+    - Generate screenshot ทันทีเมื่อ collect evidence
+    - ใช้สำหรับ PDF generation เพื่อให้แน่ใจว่ามี screenshot พร้อมใช้งาน
+  - Screenshot ถูก capture เป็น PNG ชื่อ `{html_filename}_preview.png`
+  - Screenshot ถูกเก็บใน test case folder เดียวกับ HTML file
+  - Screenshot ถูก cache และ regenerate เฉพาะเมื่อ HTML file ถูกแก้ไข (ตรวจสอบ mtime)
+  - ใน evidence list, HTML path อาจถูกแทนที่ด้วย PNG screenshot path (ถ้ามี cached screenshot) หรือคง HTML path (lazy mode)
+- **Screenshot Naming**: `testresult.html` → `testresult_preview.png`
+- **On-Demand Generation**: Screenshots จะถูก generate เมื่อ:
+  - เปิด View Details และเรียก `/api/evidence_thumbnail` endpoint
+  - Generate PDF (ใช้ eager mode)
 
 #### 6.3.3 Evidence Sorting Logic
 - **Sorting Order**:
-  1. Media files (images) เรียงตามเลขนำหน้าในชื่อไฟล์ (numeric sort)
+  1. Media files (images, HTML screenshots) เรียงตามเลขนำหน้าในชื่อไฟล์ (numeric sort)
   2. Excel files แสดงท้ายสุดเสมอ (alphabetical sort)
+- **HTML Screenshot Sorting**: 
+  - Screenshot files (`_preview.png`) ใช้ sort key จาก HTML filename เดิมเพื่อความสอดคล้อง
+  - HTML paths (lazy mode) ใช้ sort key จาก HTML filename เช่นกัน
+  - รองรับทั้ง HTML paths และ PNG screenshots ใน sorting
 - **Consistent Behavior**: ใช้ sorting logic เดียวกันใน Gallery, PDF, และ ZIP exports
-- **Performance**: Sort ครั้งเดียวตอน collect evidence, ไม่ต้อง sort ซ้ำในแต่ละ feature
+- **Performance Optimization**: 
+  - **Lazy Loading**: ไม่ generate screenshots ตอนโหลด homepage (lazy=True)
+  - **On-Demand Generation**: Screenshots ถูก generate เฉพาะเมื่อต้องการแสดงผลจริงๆ
+  - **Caching**: Screenshot caching ลดการ capture ซ้ำ
+  - **Eager Mode for PDF**: Generate screenshots ทันทีสำหรับ PDF generation (lazy=False)
+  - Sorting ทำครั้งเดียวตอน collect evidence
+  - ไม่ต้อง sort ซ้ำในแต่ละ feature
+  - **Scalability**: รองรับ 10,000+ HTML files โดยไม่ทำให้ homepage โหลดช้า
 
 ### 6.4 Font Management
 - รองรับฟอนต์ภาษาไทย
@@ -403,13 +434,26 @@ Dashboard Report เป็นระบบแสดงผลและจัดก
 
 ### 11.4 Evidence Processing Optimization (Latest Update)
 - **EvidenceProcessor Class**: Centralized class สำหรับจัดการ evidence files
-  - `collect_and_sort_evidence()`: เรียงลำดับไฟล์ (media files ตามเลขนำหน้า, Excel files ท้ายสุด)
-  - `ensure_thumbnail_exists()`: จัดการ HTML thumbnails (legacy support, ไม่ถูกเรียกใช้)
-  - `prepare_evidence_for_pdf()`: เตรียม evidence สำหรับ PDF generation
+  - `collect_and_sort_evidence(evidence_list, project_root, lazy=True)`: เรียงลำดับไฟล์และจัดการ HTML screenshots
+    - `lazy=True` (default): ไม่ generate screenshots ทันที (สำหรับ homepage)
+    - `lazy=False`: Generate screenshots ทันที (สำหรับ PDF)
+  - `process_html_to_screenshot(evidence_list, project_root, lazy=True)`: แปลง HTML files เป็น PNG screenshots
+  - `ensure_thumbnail_exists()`: ตรวจสอบและสร้าง screenshot สำหรับ HTML files (ใช้เมื่อ lazy=False)
+  - `prepare_evidence_for_pdf()`: เตรียม evidence สำหรับ PDF generation (ใช้ lazy=False)
+- **Lazy Screenshot Generation**: 
+  - **Homepage Performance**: ไม่ generate screenshots ตอนโหลด homepage เพื่อเพิ่มประสิทธิภาพ
+  - **On-Demand Generation**: Screenshots ถูก generate เฉพาะเมื่อ:
+    - เปิด View Details (เรียก `/api/evidence_thumbnail`)
+    - Generate PDF (ใช้ eager mode)
+  - **Caching**: Screenshots ที่ generate แล้วจะถูก cache และใช้ซ้ำได้
 - **Consistent Sorting**: ใช้ sorting logic เดียวกันใน Gallery, PDF, และ ZIP exports
+  - รองรับทั้ง HTML paths (lazy mode) และ PNG screenshots
 - **Excel Files Support**: แสดง Excel files ใน Gallery และ PDF (แสดงท้ายสุดเสมอ)
-- **HTML Files Exclusion**: HTML files ไม่ถูก collect เป็น evidence เนื่องจากมี screenshot PNG จาก automation อยู่แล้ว
+- **HTML Files Support**: HTML files ถูก collect เป็น evidence และถูก convert เป็น PNG screenshots
 - **Performance Improvements**: 
+  - **Lazy Loading**: ไม่ generate screenshots ตอนโหลด homepage
+  - **Scalability**: รองรับ 10,000+ HTML files โดยไม่ทำให้ homepage โหลดช้า
   - Sort ครั้งเดียวตอน collect evidence
-  - Reuse thumbnails ระหว่าง Gallery, PDF, และ ZIP exports
+  - Reuse cached screenshots ระหว่าง Gallery, PDF, และ ZIP exports
   - ลด duplicate logic และ I/O operations
+  - **Eager Mode for PDF**: Generate screenshots ทันทีสำหรับ PDF generation เพื่อให้แน่ใจว่ามี screenshot พร้อมใช้งาน
