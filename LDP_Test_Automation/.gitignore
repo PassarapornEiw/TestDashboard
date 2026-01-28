@@ -1,0 +1,27 @@
+# Robot Framework output files (should be in results/ directory)
+log.html
+output.xml
+report.html
+
+# Results directory (keep structure but ignore contents)
+results/*.html
+results/*.xml
+results/screenshots/*
+!results/.gitkeep
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

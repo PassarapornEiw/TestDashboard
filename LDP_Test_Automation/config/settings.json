@@ -1,0 +1,58 @@
+{
+  "browser": {
+    "name": "Chrome",
+    "options": {
+      "headless": false,
+      "window_size": "1920,1080"
+    }
+  },
+  "browsers": {
+    "Chrome": {
+      "enabled": true,
+      "options": {
+        "headless": false,
+        "window_size": "1920,1080"
+      }
+    },
+    "Firefox": {
+      "enabled": true,
+      "options": {
+        "headless": false,
+        "window_size": "1920,1080"
+      }
+    },
+    "Edge": {
+      "enabled": true,
+      "options": {
+        "headless": false,
+        "window_size": "1920,1080"
+      }
+    }
+  },
+  "environment": {
+    "base_url": "http://localhost:5000/",
+    "timeout": 30,
+    "implicit_wait": 10
+  },
+  "sms_otp": {
+    "url": "http://localhost:3000",
+    "username": "admin",
+    "password": "123456",
+    "capture_screenshots": true
+  },
+  "test_data": {
+    "excel_file": "test_data/test_data_numeric.xlsx",
+    "sheet_name": "TestCases"
+  },
+  "results": {
+    "output_dir": "results",
+    "screenshot_on_failure": true,
+    "screenshot_on_pass": false
+  }
+}
+
+
+
+
+
+
