@@ -7,7 +7,7 @@ ${CONFIG_READER}    ConfigReader
 
 *** Keywords ***
 Load Environment Configuration
-    [Documentation]    Load environment configuration from settings.json
+    [Documentation]    Load environment configuration from LDP_UI.yaml
     ${config_reader}=    Get Library Instance    ConfigReader
     ${base_url}=    Call Method    ${config_reader}    get_base_url
     ${timeout}=    Call Method    ${config_reader}    get_timeout

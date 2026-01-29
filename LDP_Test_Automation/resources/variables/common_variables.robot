@@ -1,6 +1,6 @@
 *** Variables ***
-# Base URLs - BASE_URL is set dynamically from settings.json via Initialize Browser
-${BASE_URL}                          ${EMPTY}    # Set by Initialize Browser from settings.json
+# Base URLs - BASE_URL is set dynamically from LDP_UI.yaml via Initialize Browser
+${BASE_URL}                          ${EMPTY}    # Set by Initialize Browser from LDP_UI.yaml
 ${AUTH_PAGE}                         authentication.html
 ${OTP1_PAGE}                         otp1.html
 ${SELECT_CARD_PAGE}                  select_credit_card.html

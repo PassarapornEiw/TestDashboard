@@ -7,7 +7,7 @@ ${CONFIG_READER}    ConfigReader
 
 *** Keywords ***
 Load Browser Configuration
-    [Documentation]    Load browser configuration from settings.json
+    [Documentation]    Load browser configuration from LDP_UI.yaml
     ${config_reader}=    Get Library Instance    ConfigReader
     ${browser_name}=    Call Method    ${config_reader}    get_browser_name
     ${browser_options}=    Call Method    ${config_reader}    get_browser_options

@@ -1,13 +1,13 @@
 """
 Config Reader Library for Robot Framework
-Handles reading settings.json and configuring browser
+Handles reading LDP_UI.yaml and configuring browser
 """
 from typing import Any, Dict, List, Optional
 from base_library import BaseLibrary
 
 
 class ConfigReader(BaseLibrary):
-    """Library for reading configuration from settings.json"""
+    """Library for reading configuration from LDP_UI.yaml"""
 
     def get_browser_name(self) -> str:
         """Get default browser name from settings"""

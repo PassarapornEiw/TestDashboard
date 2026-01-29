@@ -11,7 +11,7 @@ Resource         ../variables/locators.robot
 
 *** Keywords ***
 Initialize Browser
-    [Documentation]    Initialize browser based on settings.json
+    [Documentation]    Initialize browser based on LDP_UI.yaml
     ${browser_name}=    ConfigReader.Get Browser Name
     ${base_url}=    ConfigReader.Get Base Url
     Set Suite Variable    ${BASE_URL}    ${base_url}    # Set BASE_URL for all page objects
@@ -22,7 +22,7 @@ Initialize Browser
     Set Selenium Implicit Wait    10s
 
 Get Base Url
-    [Documentation]    Get base URL from settings.json
+    [Documentation]    Get base URL from LDP_UI.yaml
     ${base_url}=    ConfigReader.Get Base Url
     RETURN    ${base_url}
 

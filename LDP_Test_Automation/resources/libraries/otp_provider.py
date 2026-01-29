@@ -36,7 +36,7 @@ class OTPProvider(BaseLibrary):
     
     def get_sms_otp_config(self, key: str = None) -> str:
         """
-        Get SMS_OTP configuration from settings
+        Get SMS_OTP configuration from LDP_UI config
         
         Args:
             key: Config key to retrieve (url, username, password)
@@ -65,5 +65,5 @@ def format_phone_for_sms_gateway(phone: str) -> str:
 
 
 def get_sms_otp_config(key: str = None) -> str:
-    """Get SMS_OTP configuration from settings"""
+    """Get SMS_OTP configuration from LDP_UI config"""
     return _otp_provider_instance.get_sms_otp_config(key)

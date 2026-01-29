@@ -2,7 +2,7 @@
 Base Library for Robot Framework
 Contains shared functionality for configuration and settings management
 """
-import json
+import yaml
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -24,8 +24,8 @@ class BaseLibrary:
         return cls._project_root
     
     @classmethod
-    def load_settings(cls, settings_path: str = "config/settings.json") -> Dict[str, Any]:
-        """Load settings from JSON file (cached)"""
+    def load_settings(cls, settings_path: str = "config/LDP_UI.yaml") -> Dict[str, Any]:
+        """Load settings from YAML file (cached)"""
         if cls._settings_cache is not None:
             return cls._settings_cache
         
@@ -37,7 +37,7 @@ class BaseLibrary:
             raise FileNotFoundError(f"Settings file not found: {settings_file}")
         
         with open(settings_file, 'r', encoding='utf-8') as f:
-            cls._settings_cache = json.load(f)
+            cls._settings_cache = yaml.safe_load(f)
         
         return cls._settings_cache
     

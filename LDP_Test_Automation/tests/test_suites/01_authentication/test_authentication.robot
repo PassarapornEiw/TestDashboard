@@ -1,5 +1,6 @@
 *** Settings ***
-Documentation    Test Suite for Authentication Module
+Documentation    Test Suite for Authentication Module.
+...               Requires the LDP app server at base_url (e.g. run run_tests_with_server.bat or start server in "LDP Project" with: python server.py 5000).
 Resource         ../../../resources/keywords/common_keywords.robot
 Resource         ../../../resources/keywords/authentication_keywords.robot
 Resource         ../../../resources/page_objects/authentication_page.robot

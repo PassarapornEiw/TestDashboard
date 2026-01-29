@@ -16,7 +16,7 @@ class DataReader(BaseLibrary):
         self.test_data_file: Optional[str] = None
 
     def get_browser_config(self, browser_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """Get browser configuration from settings"""
+        """Get browser configuration from LDP_UI config"""
         if browser_name:
             browsers = self.get_setting('browsers', default={})
             if browser_name in browsers and browsers[browser_name].get('enabled', False):
