@@ -1,0 +1,52 @@
+browser:
+  name: Chrome
+  options:
+    headless: false
+    window_size: "1920,1080"
+browsers:
+  Chrome:
+    enabled: true
+    options:
+      headless: false
+      window_size: "1920,1080"
+  Firefox:
+    enabled: true
+    options:
+      headless: false
+      window_size: "1920,1080"
+  Edge:
+    enabled: true
+    options:
+      headless: false
+      window_size: "1920,1080"
+
+DRDB_URL: "http://localhost:6000/"
+
+LDP_environment:
+  ldp_base_url: "http://localhost:5000/"
+  timeout: 30
+  implicit_wait: 10
+smssmart:
+  url: "http://localhost:3000"
+  username: "admin"
+  password: "123456"
+  capture_screenshots: true
+test_data:
+  test_data_file: "test_data/test_data.xlsx"
+  rewrite_file: "test_data/rewrite_test_data.xlsx"
+
+google_url_demo:
+  google_url: "https://www.google.com/"
+
+facebook_url_demo:
+  facebook_url: "https://www.facebook.com/"
+  facebook_demo_username: "1236"
+  facebook_demo_password: "123"
+
+youtube_url_demo:
+  youtube_url: "https://www.youtube.com/"
+
+# results:
+#   output_dir: "results"
+#   screenshot_on_failure: true
+#   screenshot_on_pass: false

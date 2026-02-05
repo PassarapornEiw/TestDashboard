@@ -30,6 +30,25 @@ class ConfigReader(BaseLibrary):
         """Get results configuration"""
         return self.get_setting('results', default={})
 
+    def get_multi_url_demo_google_url(self) -> str:
+        """Get Google URL from google_url_demo section"""
+        return self.get_setting('google_url_demo', 'google_url', default='https://www.google.com/')
+
+    def get_multi_url_demo_facebook_url(self) -> str:
+        """Get Facebook URL from facebook_url_demo section"""
+        return self.get_setting('facebook_url_demo', 'facebook_url', default='https://www.facebook.com/')
+
+    def get_multi_url_demo_youtube_url(self) -> str:
+        """Get YouTube URL from youtube_url_demo section"""
+        return self.get_setting('youtube_url_demo', 'youtube_url', default='https://www.youtube.com/')
+
+    def get_multi_url_demo_facebook_credentials(self) -> Dict[str, str]:
+        """Get Facebook demo username/password from facebook_url_demo section"""
+        return {
+            'username': self.get_setting('facebook_url_demo', 'facebook_demo_username', default='1236'),
+            'password': self.get_setting('facebook_url_demo', 'facebook_demo_password', default='123'),
+        }
+
 
 # Module-level keyword wrappers (module-style library)
 _config_reader_instance = ConfigReader()
@@ -63,3 +82,19 @@ def get_test_data_file() -> str:
 def get_results_config() -> Dict[str, Any]:
     """Get results configuration"""
     return _config_reader_instance.get_results_config()
+
+
+def get_multi_url_demo_google_url() -> str:
+    return _config_reader_instance.get_multi_url_demo_google_url()
+
+
+def get_multi_url_demo_facebook_url() -> str:
+    return _config_reader_instance.get_multi_url_demo_facebook_url()
+
+
+def get_multi_url_demo_youtube_url() -> str:
+    return _config_reader_instance.get_multi_url_demo_youtube_url()
+
+
+def get_multi_url_demo_facebook_credentials() -> Dict[str, str]:
+    return _config_reader_instance.get_multi_url_demo_facebook_credentials()
