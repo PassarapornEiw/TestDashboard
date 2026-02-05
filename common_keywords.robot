@@ -59,7 +59,6 @@ Navigate To Page
 
 Click Common Back Button
     [Documentation]    Click back button and wait for page load
-    page_base.Click Back Button
     Wait For Page Load
 
 Click Close Button
