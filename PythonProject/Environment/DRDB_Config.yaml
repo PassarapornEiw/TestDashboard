@@ -1,0 +1,31 @@
+# Minimal config for test.robot Get From Settings
+Input_Test_Data:
+  GDR_InputFileName: GDR_InputFileName.xlsx
+  ert_InputFileName: ert_InputFileName.xlsx
+  erty_InputFileName: erty_InputFileName.xlsx
+  ghh_InputFileName: ghh_InputFileName.xlsx
+  rrr_InputFileName: rrr_InputFileName.xlsx
+  jjj_InputFileName: jjj_InputFileName.xlsx
+
+SMSSmart_environment:
+  username: username
+  password: password
+  sms_url: sms_url
+
+LDP_environment:
+  ldp_base_url: ldp_base_url
+  timeout: timeout
+  implicit_wait: implicit_wait
+
+DRDB_environment:
+  drdb_base_url: drdb_base_url
+  timeout: timeout
+  implicit_wait: implicit_wait
+  capture_screenshots: capture_screenshots
+  rewrite_file: rewrite_file
+  test_data_file: test_data_file
+  sheet_name: sheet_name
+  output_dir: output_dir
+  screenshot_on_failure: screenshot_on_failure
+  screenshot_on_pass: screenshot_on_pass
+

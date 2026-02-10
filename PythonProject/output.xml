@@ -1,0 +1,544 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<robot generator="Robot 7.2.2 (Python 3.11.7 on win32)" generated="2026-02-10T22:42:34.255621" rpa="false" schemaversion="5">
+<suite id="s1" name="Test" source="C:\Users\Eiw\Documents\Krungsri Tasks\Automation_Project\PythonProject\test.robot">
+<test id="s1-t1" name="Verify Get From Settings" line="21">
+<kw name="Open Browser">
+<kw name="Get From Settings">
+<kw name="Get Library Instance" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.101449" level="INFO">${mod} = &lt;module 'data_reader' from 'C:\\Users\\Eiw\\Documents\\Krungsri Tasks\\Automation_Project\\PythonProject\\Resources\\pythonLib\\data_reader.py'&gt;</msg>
+<var>${mod}</var>
+<arg>DataReader</arg>
+<doc>Returns the currently active instance of the specified library.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.100423" elapsed="0.001026"/>
+</kw>
+<kw name="Evaluate" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.103441" level="INFO">${instance} = &lt;data_reader.DataReader object at 0x000002967E440250&gt;</msg>
+<var>${instance}</var>
+<arg>$mod.DataReader()</arg>
+<doc>Evaluates the given expression in Python and returns the result.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.101449" elapsed="0.001992"/>
+</kw>
+<kw name="Call Method" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.106434" level="INFO">${value} = GDR_InputFileName.xlsx</msg>
+<var>${value}</var>
+<arg>${instance}</arg>
+<arg>get_from_settings</arg>
+<arg>${dotted_path}</arg>
+<arg>${default}</arg>
+<arg>${settings_path}</arg>
+<doc>Calls the named method of the given object with the provided arguments.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.103441" elapsed="0.002993"/>
+</kw>
+<return>
+<value>${value}</value>
+<status status="PASS" start="2026-02-10T22:42:35.106434" elapsed="0.000000"/>
+</return>
+<msg time="2026-02-10T22:42:35.106434" level="INFO">${value} = GDR_InputFileName.xlsx</msg>
+<var>${value}</var>
+<arg>Input_Test_Data.GDR_InputFileName</arg>
+<status status="PASS" start="2026-02-10T22:42:35.099425" elapsed="0.007009"/>
+</kw>
+<kw name="Log" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.107433" level="INFO">GDR_InputFileName.xlsx</msg>
+<arg>${value}</arg>
+<doc>Logs the given message with the given level.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.106434" elapsed="0.000999"/>
+</kw>
+<status status="PASS" start="2026-02-10T22:42:35.099425" elapsed="0.008008"/>
+</kw>
+<status status="PASS" start="2026-02-10T22:42:35.098427" elapsed="0.009006"/>
+</test>
+<test id="s1-t2" name="Example 01 Get Single Value From YAML" line="25">
+<kw name="Get From Settings">
+<kw name="Get Library Instance" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.108400" level="INFO">${mod} = &lt;module 'data_reader' from 'C:\\Users\\Eiw\\Documents\\Krungsri Tasks\\Automation_Project\\PythonProject\\Resources\\pythonLib\\data_reader.py'&gt;</msg>
+<var>${mod}</var>
+<arg>DataReader</arg>
+<doc>Returns the currently active instance of the specified library.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.108400" elapsed="0.000000"/>
+</kw>
+<kw name="Evaluate" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.108400" level="INFO">${instance} = &lt;data_reader.DataReader object at 0x000002967E4942D0&gt;</msg>
+<var>${instance}</var>
+<arg>$mod.DataReader()</arg>
+<doc>Evaluates the given expression in Python and returns the result.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.108400" elapsed="0.000000"/>
+</kw>
+<kw name="Call Method" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.109398" level="INFO">${value} = GDR_InputFileName.xlsx</msg>
+<var>${value}</var>
+<arg>${instance}</arg>
+<arg>get_from_settings</arg>
+<arg>${dotted_path}</arg>
+<arg>${default}</arg>
+<arg>${settings_path}</arg>
+<doc>Calls the named method of the given object with the provided arguments.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.108400" elapsed="0.000998"/>
+</kw>
+<return>
+<value>${value}</value>
+<status status="PASS" start="2026-02-10T22:42:35.109398" elapsed="0.000000"/>
+</return>
+<msg time="2026-02-10T22:42:35.109398" level="INFO">${filename} = GDR_InputFileName.xlsx</msg>
+<var>${filename}</var>
+<arg>Input_Test_Data.GDR_InputFileName</arg>
+<status status="PASS" start="2026-02-10T22:42:35.107433" elapsed="0.001965"/>
+</kw>
+<kw name="Log" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.109398" level="INFO">ใช้ค่าจาก YAML: GDR_InputFileName.xlsx</msg>
+<arg>ใช้ค่าจาก YAML: ${filename}</arg>
+<doc>Logs the given message with the given level.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.109398" elapsed="0.000000"/>
+</kw>
+<kw name="Should Be Equal As Strings" owner="BuiltIn">
+<arg>${filename}</arg>
+<arg>GDR_InputFileName.xlsx</arg>
+<doc>Fails if objects are unequal after converting them to strings.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.109398" elapsed="0.001020"/>
+</kw>
+<status status="PASS" start="2026-02-10T22:42:35.107433" elapsed="0.002985"/>
+</test>
+<test id="s1-t3" name="Example 02 Use LDP Environment Variables" line="31">
+<kw name="Get From Settings">
+<kw name="Get Library Instance" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.111392" level="INFO">${mod} = &lt;module 'data_reader' from 'C:\\Users\\Eiw\\Documents\\Krungsri Tasks\\Automation_Project\\PythonProject\\Resources\\pythonLib\\data_reader.py'&gt;</msg>
+<var>${mod}</var>
+<arg>DataReader</arg>
+<doc>Returns the currently active instance of the specified library.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.110418" elapsed="0.000974"/>
+</kw>
+<kw name="Evaluate" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.111392" level="INFO">${instance} = &lt;data_reader.DataReader object at 0x000002967E481650&gt;</msg>
+<var>${instance}</var>
+<arg>$mod.DataReader()</arg>
+<doc>Evaluates the given expression in Python and returns the result.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.111392" elapsed="0.000000"/>
+</kw>
+<kw name="Call Method" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.111392" level="INFO">${value} = ldp_base_url</msg>
+<var>${value}</var>
+<arg>${instance}</arg>
+<arg>get_from_settings</arg>
+<arg>${dotted_path}</arg>
+<arg>${default}</arg>
+<arg>${settings_path}</arg>
+<doc>Calls the named method of the given object with the provided arguments.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.111392" elapsed="0.000000"/>
+</kw>
+<return>
+<value>${value}</value>
+<status status="PASS" start="2026-02-10T22:42:35.111392" elapsed="0.000998"/>
+</return>
+<msg time="2026-02-10T22:42:35.112390" level="INFO">${url} = ldp_base_url</msg>
+<var>${url}</var>
+<arg>LDP_environment.ldp_base_url</arg>
+<status status="PASS" start="2026-02-10T22:42:35.110418" elapsed="0.001972"/>
+</kw>
+<kw name="Get From Settings">
+<kw name="Get Library Instance" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.112390" level="INFO">${mod} = &lt;module 'data_reader' from 'C:\\Users\\Eiw\\Documents\\Krungsri Tasks\\Automation_Project\\PythonProject\\Resources\\pythonLib\\data_reader.py'&gt;</msg>
+<var>${mod}</var>
+<arg>DataReader</arg>
+<doc>Returns the currently active instance of the specified library.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.112390" elapsed="0.000000"/>
+</kw>
+<kw name="Evaluate" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.113415" level="INFO">${instance} = &lt;data_reader.DataReader object at 0x000002967E49F390&gt;</msg>
+<var>${instance}</var>
+<arg>$mod.DataReader()</arg>
+<doc>Evaluates the given expression in Python and returns the result.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.112390" elapsed="0.001025"/>
+</kw>
+<kw name="Call Method" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.113415" level="INFO">${value} = timeout</msg>
+<var>${value}</var>
+<arg>${instance}</arg>
+<arg>get_from_settings</arg>
+<arg>${dotted_path}</arg>
+<arg>${default}</arg>
+<arg>${settings_path}</arg>
+<doc>Calls the named method of the given object with the provided arguments.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.113415" elapsed="0.000000"/>
+</kw>
+<return>
+<value>${value}</value>
+<status status="PASS" start="2026-02-10T22:42:35.113415" elapsed="0.000000"/>
+</return>
+<msg time="2026-02-10T22:42:35.113415" level="INFO">${timeout} = timeout</msg>
+<var>${timeout}</var>
+<arg>LDP_environment.timeout</arg>
+<arg>default=30</arg>
+<status status="PASS" start="2026-02-10T22:42:35.112390" elapsed="0.001025"/>
+</kw>
+<kw name="Log" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.114385" level="INFO">LDP URL: ldp_base_url, Timeout: timeout</msg>
+<arg>LDP URL: ${url}, Timeout: ${timeout}</arg>
+<doc>Logs the given message with the given level.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.113415" elapsed="0.000970"/>
+</kw>
+<status status="PASS" start="2026-02-10T22:42:35.110418" elapsed="0.003967"/>
+</test>
+<test id="s1-t4" name="Example 03 Load Section And Use Variables" line="37">
+<kw name="Load Section From Settings">
+<kw name="Get Library Instance" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.115382" level="INFO">${mod} = &lt;module 'data_reader' from 'C:\\Users\\Eiw\\Documents\\Krungsri Tasks\\Automation_Project\\PythonProject\\Resources\\pythonLib\\data_reader.py'&gt;</msg>
+<var>${mod}</var>
+<arg>DataReader</arg>
+<doc>Returns the currently active instance of the specified library.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.115382" elapsed="0.000000"/>
+</kw>
+<kw name="Evaluate" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.115382" level="INFO">${instance} = &lt;data_reader.DataReader object at 0x000002967E4982D0&gt;</msg>
+<var>${instance}</var>
+<arg>$mod.DataReader()</arg>
+<doc>Evaluates the given expression in Python and returns the result.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.115382" elapsed="0.000000"/>
+</kw>
+<kw name="Call Method" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.116379" level="INFO">${INPUT_TEST_DATA} = {'GDR_InputFileName': 'GDR_InputFileName.xlsx', 'ert_InputFileName': 'ert_InputFileName.xlsx', 'erty_InputFileName': 'erty_InputFileName.xlsx', 'ghh_InputFileName': 'ghh_InputFileName.xlsx', 'rrr_Inpu...</msg>
+<msg time="2026-02-10T22:42:35.117405" level="INFO">${INPUT_TEST_DATA_GDR_INPUTFILENAME} = GDR_InputFileName.xlsx</msg>
+<msg time="2026-02-10T22:42:35.117405" level="INFO">${INPUT_TEST_DATA_ERT_INPUTFILENAME} = ert_InputFileName.xlsx</msg>
+<msg time="2026-02-10T22:42:35.118402" level="INFO">${INPUT_TEST_DATA_ERTY_INPUTFILENAME} = erty_InputFileName.xlsx</msg>
+<msg time="2026-02-10T22:42:35.119371" level="INFO">${INPUT_TEST_DATA_GHH_INPUTFILENAME} = ghh_InputFileName.xlsx</msg>
+<msg time="2026-02-10T22:42:35.120394" level="INFO">${INPUT_TEST_DATA_RRR_INPUTFILENAME} = rrr_InputFileName.xlsx</msg>
+<msg time="2026-02-10T22:42:35.121393" level="INFO">${INPUT_TEST_DATA_JJJ_INPUTFILENAME} = jjj_InputFileName.xlsx</msg>
+<msg time="2026-02-10T22:42:35.121393" level="INFO">${section_dict} = {'GDR_InputFileName': 'GDR_InputFileName.xlsx', 'ert_InputFileName': 'ert_InputFileName.xlsx', 'erty_InputFileName': 'erty_InputFileName.xlsx', 'ghh_InputFileName': 'ghh_InputFileName.xlsx', 'rrr_Inpu...</msg>
+<var>${section_dict}</var>
+<arg>${instance}</arg>
+<arg>load_section_from_settings</arg>
+<arg>${section}</arg>
+<arg>${prefix}</arg>
+<arg>suite</arg>
+<arg>${settings_path}</arg>
+<doc>Calls the named method of the given object with the provided arguments.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.115382" elapsed="0.006011"/>
+</kw>
+<kw name="Evaluate" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.121393" level="INFO">${var_prefix} = INPUT_TEST_DATA</msg>
+<var>${var_prefix}</var>
+<arg>re.sub(r'[^A-Z0-9]+', '_', '${section}'.upper()).strip('_')</arg>
+<arg>re</arg>
+<doc>Evaluates the given expression in Python and returns the result.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.121393" elapsed="0.000000"/>
+</kw>
+<for flavor="IN">
+<iter>
+<kw name="Evaluate" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.122391" level="INFO">${suffix} = GDR_INPUTFILENAME</msg>
+<var>${suffix}</var>
+<arg>re.sub(r'[^A-Z0-9]+', '_', '${key}'.upper()).strip('_')</arg>
+<arg>re</arg>
+<doc>Evaluates the given expression in Python and returns the result.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.122391" elapsed="0.000000"/>
+</kw>
+<kw name="Set Variable" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.122391" level="INFO">${var_name} = INPUT_TEST_DATA_GDR_INPUTFILENAME</msg>
+<var>${var_name}</var>
+<arg>${var_prefix}_${suffix}</arg>
+<doc>Returns the given values which can then be assigned to a variables.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.122391" elapsed="0.000000"/>
+</kw>
+<kw name="Set Suite Variable" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.123383" level="INFO">${INPUT_TEST_DATA_GDR_INPUTFILENAME} = GDR_InputFileName.xlsx</msg>
+<arg>\${${var_name}}</arg>
+<arg>${value}</arg>
+<doc>Makes a variable available everywhere within the scope of the current suite.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.123383" elapsed="0.000000"/>
+</kw>
+<var name="${key}">GDR_InputFileName</var>
+<var name="${value}">GDR_InputFileName.xlsx</var>
+<status status="PASS" start="2026-02-10T22:42:35.122391" elapsed="0.000992"/>
+</iter>
+<iter>
+<kw name="Evaluate" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.123383" level="INFO">${suffix} = ERT_INPUTFILENAME</msg>
+<var>${suffix}</var>
+<arg>re.sub(r'[^A-Z0-9]+', '_', '${key}'.upper()).strip('_')</arg>
+<arg>re</arg>
+<doc>Evaluates the given expression in Python and returns the result.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.123383" elapsed="0.000000"/>
+</kw>
+<kw name="Set Variable" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.124386" level="INFO">${var_name} = INPUT_TEST_DATA_ERT_INPUTFILENAME</msg>
+<var>${var_name}</var>
+<arg>${var_prefix}_${suffix}</arg>
+<doc>Returns the given values which can then be assigned to a variables.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.123383" elapsed="0.001003"/>
+</kw>
+<kw name="Set Suite Variable" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.124386" level="INFO">${INPUT_TEST_DATA_ERT_INPUTFILENAME} = ert_InputFileName.xlsx</msg>
+<arg>\${${var_name}}</arg>
+<arg>${value}</arg>
+<doc>Makes a variable available everywhere within the scope of the current suite.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.124386" elapsed="0.000000"/>
+</kw>
+<var name="${key}">ert_InputFileName</var>
+<var name="${value}">ert_InputFileName.xlsx</var>
+<status status="PASS" start="2026-02-10T22:42:35.123383" elapsed="0.001003"/>
+</iter>
+<iter>
+<kw name="Evaluate" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.124386" level="INFO">${suffix} = ERTY_INPUTFILENAME</msg>
+<var>${suffix}</var>
+<arg>re.sub(r'[^A-Z0-9]+', '_', '${key}'.upper()).strip('_')</arg>
+<arg>re</arg>
+<doc>Evaluates the given expression in Python and returns the result.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.124386" elapsed="0.000999"/>
+</kw>
+<kw name="Set Variable" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.125385" level="INFO">${var_name} = INPUT_TEST_DATA_ERTY_INPUTFILENAME</msg>
+<var>${var_name}</var>
+<arg>${var_prefix}_${suffix}</arg>
+<doc>Returns the given values which can then be assigned to a variables.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.125385" elapsed="0.000000"/>
+</kw>
+<kw name="Set Suite Variable" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.125385" level="INFO">${INPUT_TEST_DATA_ERTY_INPUTFILENAME} = erty_InputFileName.xlsx</msg>
+<arg>\${${var_name}}</arg>
+<arg>${value}</arg>
+<doc>Makes a variable available everywhere within the scope of the current suite.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.125385" elapsed="0.000000"/>
+</kw>
+<var name="${key}">erty_InputFileName</var>
+<var name="${value}">erty_InputFileName.xlsx</var>
+<status status="PASS" start="2026-02-10T22:42:35.124386" elapsed="0.000999"/>
+</iter>
+<iter>
+<kw name="Evaluate" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.126375" level="INFO">${suffix} = GHH_INPUTFILENAME</msg>
+<var>${suffix}</var>
+<arg>re.sub(r'[^A-Z0-9]+', '_', '${key}'.upper()).strip('_')</arg>
+<arg>re</arg>
+<doc>Evaluates the given expression in Python and returns the result.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.125385" elapsed="0.000990"/>
+</kw>
+<kw name="Set Variable" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.126375" level="INFO">${var_name} = INPUT_TEST_DATA_GHH_INPUTFILENAME</msg>
+<var>${var_name}</var>
+<arg>${var_prefix}_${suffix}</arg>
+<doc>Returns the given values which can then be assigned to a variables.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.126375" elapsed="0.000000"/>
+</kw>
+<kw name="Set Suite Variable" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.126375" level="INFO">${INPUT_TEST_DATA_GHH_INPUTFILENAME} = ghh_InputFileName.xlsx</msg>
+<arg>\${${var_name}}</arg>
+<arg>${value}</arg>
+<doc>Makes a variable available everywhere within the scope of the current suite.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.126375" elapsed="0.000000"/>
+</kw>
+<var name="${key}">ghh_InputFileName</var>
+<var name="${value}">ghh_InputFileName.xlsx</var>
+<status status="PASS" start="2026-02-10T22:42:35.125385" elapsed="0.000990"/>
+</iter>
+<iter>
+<kw name="Evaluate" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.127377" level="INFO">${suffix} = RRR_INPUTFILENAME</msg>
+<var>${suffix}</var>
+<arg>re.sub(r'[^A-Z0-9]+', '_', '${key}'.upper()).strip('_')</arg>
+<arg>re</arg>
+<doc>Evaluates the given expression in Python and returns the result.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.127377" elapsed="0.000000"/>
+</kw>
+<kw name="Set Variable" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.127377" level="INFO">${var_name} = INPUT_TEST_DATA_RRR_INPUTFILENAME</msg>
+<var>${var_name}</var>
+<arg>${var_prefix}_${suffix}</arg>
+<doc>Returns the given values which can then be assigned to a variables.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.127377" elapsed="0.000000"/>
+</kw>
+<kw name="Set Suite Variable" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.128372" level="INFO">${INPUT_TEST_DATA_RRR_INPUTFILENAME} = rrr_InputFileName.xlsx</msg>
+<arg>\${${var_name}}</arg>
+<arg>${value}</arg>
+<doc>Makes a variable available everywhere within the scope of the current suite.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.127377" elapsed="0.000995"/>
+</kw>
+<var name="${key}">rrr_InputFileName</var>
+<var name="${value}">rrr_InputFileName.xlsx</var>
+<status status="PASS" start="2026-02-10T22:42:35.127377" elapsed="0.000995"/>
+</iter>
+<iter>
+<kw name="Evaluate" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.128372" level="INFO">${suffix} = JJJ_INPUTFILENAME</msg>
+<var>${suffix}</var>
+<arg>re.sub(r'[^A-Z0-9]+', '_', '${key}'.upper()).strip('_')</arg>
+<arg>re</arg>
+<doc>Evaluates the given expression in Python and returns the result.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.128372" elapsed="0.000000"/>
+</kw>
+<kw name="Set Variable" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.128372" level="INFO">${var_name} = INPUT_TEST_DATA_JJJ_INPUTFILENAME</msg>
+<var>${var_name}</var>
+<arg>${var_prefix}_${suffix}</arg>
+<doc>Returns the given values which can then be assigned to a variables.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.128372" elapsed="0.000000"/>
+</kw>
+<kw name="Set Suite Variable" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.129372" level="INFO">${INPUT_TEST_DATA_JJJ_INPUTFILENAME} = jjj_InputFileName.xlsx</msg>
+<arg>\${${var_name}}</arg>
+<arg>${value}</arg>
+<doc>Makes a variable available everywhere within the scope of the current suite.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.128372" elapsed="0.001000"/>
+</kw>
+<var name="${key}">jjj_InputFileName</var>
+<var name="${value}">jjj_InputFileName.xlsx</var>
+<status status="PASS" start="2026-02-10T22:42:35.128372" elapsed="0.001000"/>
+</iter>
+<var>${key}</var>
+<var>${value}</var>
+<value>&amp;{section_dict}</value>
+<status status="PASS" start="2026-02-10T22:42:35.121393" elapsed="0.007979"/>
+</for>
+<arg>Input_Test_Data</arg>
+<status status="PASS" start="2026-02-10T22:42:35.114385" elapsed="0.014987"/>
+</kw>
+<kw name="Log" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.129372" level="INFO">ใช้ตัวแปรที่โหลดจาก YAML:</msg>
+<arg>ใช้ตัวแปรที่โหลดจาก YAML:</arg>
+<doc>Logs the given message with the given level.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.129372" elapsed="0.000000"/>
+</kw>
+<kw name="Log" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.129372" level="INFO">- GDR file: GDR_InputFileName.xlsx</msg>
+<arg>- GDR file: ${INPUT_TEST_DATA_GDR_INPUTFILENAME}</arg>
+<doc>Logs the given message with the given level.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.129372" elapsed="0.000000"/>
+</kw>
+<kw name="Log" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.130345" level="INFO">- ERT file: ert_InputFileName.xlsx</msg>
+<arg>- ERT file: ${INPUT_TEST_DATA_ERT_INPUTFILENAME}</arg>
+<doc>Logs the given message with the given level.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.130345" elapsed="0.000000"/>
+</kw>
+<status status="PASS" start="2026-02-10T22:42:35.114385" elapsed="0.015960"/>
+</test>
+<test id="s1-t5" name="Example 04 Use Multiple Sections From YAML" line="44">
+<kw name="Get From Settings">
+<kw name="Get Library Instance" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.131340" level="INFO">${mod} = &lt;module 'data_reader' from 'C:\\Users\\Eiw\\Documents\\Krungsri Tasks\\Automation_Project\\PythonProject\\Resources\\pythonLib\\data_reader.py'&gt;</msg>
+<var>${mod}</var>
+<arg>DataReader</arg>
+<doc>Returns the currently active instance of the specified library.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.131340" elapsed="0.000000"/>
+</kw>
+<kw name="Evaluate" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.132337" level="INFO">${instance} = &lt;data_reader.DataReader object at 0x000002967E4B4510&gt;</msg>
+<var>${instance}</var>
+<arg>$mod.DataReader()</arg>
+<doc>Evaluates the given expression in Python and returns the result.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.131340" elapsed="0.000997"/>
+</kw>
+<kw name="Call Method" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.132337" level="INFO">${value} = drdb_base_url</msg>
+<var>${value}</var>
+<arg>${instance}</arg>
+<arg>get_from_settings</arg>
+<arg>${dotted_path}</arg>
+<arg>${default}</arg>
+<arg>${settings_path}</arg>
+<doc>Calls the named method of the given object with the provided arguments.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.132337" elapsed="0.000000"/>
+</kw>
+<return>
+<value>${value}</value>
+<status status="PASS" start="2026-02-10T22:42:35.132337" elapsed="0.000000"/>
+</return>
+<msg time="2026-02-10T22:42:35.132337" level="INFO">${drdb_url} = drdb_base_url</msg>
+<var>${drdb_url}</var>
+<arg>DRDB_environment.drdb_base_url</arg>
+<status status="PASS" start="2026-02-10T22:42:35.130345" elapsed="0.001992"/>
+</kw>
+<kw name="Get From Settings">
+<kw name="Get Library Instance" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.133364" level="INFO">${mod} = &lt;module 'data_reader' from 'C:\\Users\\Eiw\\Documents\\Krungsri Tasks\\Automation_Project\\PythonProject\\Resources\\pythonLib\\data_reader.py'&gt;</msg>
+<var>${mod}</var>
+<arg>DataReader</arg>
+<doc>Returns the currently active instance of the specified library.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.133364" elapsed="0.000000"/>
+</kw>
+<kw name="Evaluate" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.133364" level="INFO">${instance} = &lt;data_reader.DataReader object at 0x000002967E4B6E10&gt;</msg>
+<var>${instance}</var>
+<arg>$mod.DataReader()</arg>
+<doc>Evaluates the given expression in Python and returns the result.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.133364" elapsed="0.000000"/>
+</kw>
+<kw name="Call Method" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.134360" level="INFO">${value} = username</msg>
+<var>${value}</var>
+<arg>${instance}</arg>
+<arg>get_from_settings</arg>
+<arg>${dotted_path}</arg>
+<arg>${default}</arg>
+<arg>${settings_path}</arg>
+<doc>Calls the named method of the given object with the provided arguments.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.133364" elapsed="0.000996"/>
+</kw>
+<return>
+<value>${value}</value>
+<status status="PASS" start="2026-02-10T22:42:35.134360" elapsed="0.000000"/>
+</return>
+<msg time="2026-02-10T22:42:35.134360" level="INFO">${sms_user} = username</msg>
+<var>${sms_user}</var>
+<arg>SMSSmart_environment.username</arg>
+<status status="PASS" start="2026-02-10T22:42:35.132337" elapsed="0.002023"/>
+</kw>
+<kw name="Get From Settings">
+<kw name="Get Library Instance" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.135357" level="INFO">${mod} = &lt;module 'data_reader' from 'C:\\Users\\Eiw\\Documents\\Krungsri Tasks\\Automation_Project\\PythonProject\\Resources\\pythonLib\\data_reader.py'&gt;</msg>
+<var>${mod}</var>
+<arg>DataReader</arg>
+<doc>Returns the currently active instance of the specified library.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.134360" elapsed="0.000997"/>
+</kw>
+<kw name="Evaluate" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.135357" level="INFO">${instance} = &lt;data_reader.DataReader object at 0x000002967E49BDD0&gt;</msg>
+<var>${instance}</var>
+<arg>$mod.DataReader()</arg>
+<doc>Evaluates the given expression in Python and returns the result.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.135357" elapsed="0.000000"/>
+</kw>
+<kw name="Call Method" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.135357" level="INFO">${value} = sheet_name</msg>
+<var>${value}</var>
+<arg>${instance}</arg>
+<arg>get_from_settings</arg>
+<arg>${dotted_path}</arg>
+<arg>${default}</arg>
+<arg>${settings_path}</arg>
+<doc>Calls the named method of the given object with the provided arguments.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.135357" elapsed="0.000000"/>
+</kw>
+<return>
+<value>${value}</value>
+<status status="PASS" start="2026-02-10T22:42:35.135357" elapsed="0.000997"/>
+</return>
+<msg time="2026-02-10T22:42:35.136354" level="INFO">${sheet} = sheet_name</msg>
+<var>${sheet}</var>
+<arg>DRDB_environment.sheet_name</arg>
+<arg>default=Sheet1</arg>
+<status status="PASS" start="2026-02-10T22:42:35.134360" elapsed="0.001994"/>
+</kw>
+<kw name="Log" owner="BuiltIn">
+<msg time="2026-02-10T22:42:35.136354" level="INFO">DRDB URL=drdb_base_url, SMS user=username, Sheet=sheet_name</msg>
+<arg>DRDB URL=${drdb_url}, SMS user=${sms_user}, Sheet=${sheet}</arg>
+<doc>Logs the given message with the given level.</doc>
+<status status="PASS" start="2026-02-10T22:42:35.136354" elapsed="0.000000"/>
+</kw>
+<status status="PASS" start="2026-02-10T22:42:35.130345" elapsed="0.006009"/>
+</test>
+<status status="PASS" start="2026-02-10T22:42:34.256593" elapsed="0.879761"/>
+</suite>
+<statistics>
+<total>
+<stat pass="5" fail="0" skip="0">All Tests</stat>
+</total>
+<tag>
+</tag>
+<suite>
+<stat name="Test" id="s1" pass="5" fail="0" skip="0">Test</stat>
+</suite>
+</statistics>
+<errors>
+</errors>
+</robot>
