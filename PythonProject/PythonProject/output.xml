@@ -1,0 +1,252 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<robot generator="Robot 7.4.1 (Python 3.13.9 on win32)" generated="2026-02-10T23:34:08.392298" rpa="false" schemaversion="5">
+<suite id="s1" name="Test" source="C:\Users\Eiw\.cursor\TestDashboard\PythonProject\test.robot">
+<test id="s1-t1" name="Verify Get From Settings" line="21">
+<kw name="Log GDR Input File Name">
+<kw name="Get From Settings">
+<kw name="Get Library Instance" owner="BuiltIn">
+<msg time="2026-02-10T23:34:12.198258" level="INFO">${instance} = &lt;module 'data_reader' from 'C:\\Users\\Eiw\\.cursor\\TestDashboard\\PythonProject\\Resources\\pythonLib\\data_reader.py'&gt;</msg>
+<var>${instance}</var>
+<arg>DataReader</arg>
+<doc>Returns the currently active instance of the specified library.</doc>
+<status status="PASS" start="2026-02-10T23:34:12.198039" elapsed="0.000247"/>
+</kw>
+<kw name="Call Method" owner="BuiltIn">
+<msg time="2026-02-10T23:34:12.198606" level="FAIL">module object does not have method 'get_from_settings'.</msg>
+<var>${value}</var>
+<arg>${instance}</arg>
+<arg>get_from_settings</arg>
+<arg>${dotted_path}</arg>
+<arg>${default}</arg>
+<arg>${settings_path}</arg>
+<doc>Calls the named method of the given object with the provided arguments.</doc>
+<status status="FAIL" start="2026-02-10T23:34:12.198378" elapsed="0.000394">module object does not have method 'get_from_settings'.</status>
+</kw>
+<return>
+<value>${value}</value>
+<status status="NOT RUN" start="2026-02-10T23:34:12.198835" elapsed="0.000045"/>
+</return>
+<var>${value}</var>
+<arg>Input_Test_Data.GDR_InputFileName</arg>
+<status status="FAIL" start="2026-02-10T23:34:12.197438" elapsed="0.001521">module object does not have method 'get_from_settings'.</status>
+</kw>
+<kw name="Log" owner="BuiltIn">
+<arg>${value}</arg>
+<doc>Logs the given message with the given level.</doc>
+<status status="NOT RUN" start="2026-02-10T23:34:12.199034" elapsed="0.000015"/>
+</kw>
+<status status="FAIL" start="2026-02-10T23:34:12.196783" elapsed="0.002314">module object does not have method 'get_from_settings'.</status>
+</kw>
+<status status="FAIL" start="2026-02-10T23:34:12.196100" elapsed="0.003356">module object does not have method 'get_from_settings'.</status>
+</test>
+<test id="s1-t2" name="Example 01 Get Single Value From YAML" line="25">
+<kw name="Get From Settings">
+<kw name="Get Library Instance" owner="BuiltIn">
+<msg time="2026-02-10T23:34:12.201013" level="INFO">${instance} = &lt;module 'data_reader' from 'C:\\Users\\Eiw\\.cursor\\TestDashboard\\PythonProject\\Resources\\pythonLib\\data_reader.py'&gt;</msg>
+<var>${instance}</var>
+<arg>DataReader</arg>
+<doc>Returns the currently active instance of the specified library.</doc>
+<status status="PASS" start="2026-02-10T23:34:12.200852" elapsed="0.000182"/>
+</kw>
+<kw name="Call Method" owner="BuiltIn">
+<msg time="2026-02-10T23:34:12.201269" level="FAIL">module object does not have method 'get_from_settings'.</msg>
+<var>${value}</var>
+<arg>${instance}</arg>
+<arg>get_from_settings</arg>
+<arg>${dotted_path}</arg>
+<arg>${default}</arg>
+<arg>${settings_path}</arg>
+<doc>Calls the named method of the given object with the provided arguments.</doc>
+<status status="FAIL" start="2026-02-10T23:34:12.201097" elapsed="0.000236">module object does not have method 'get_from_settings'.</status>
+</kw>
+<return>
+<value>${value}</value>
+<status status="NOT RUN" start="2026-02-10T23:34:12.201377" elapsed="0.000018"/>
+</return>
+<var>${filename}</var>
+<arg>Input_Test_Data.GDR_InputFileName</arg>
+<status status="FAIL" start="2026-02-10T23:34:12.200652" elapsed="0.000793">module object does not have method 'get_from_settings'.</status>
+</kw>
+<kw name="Log" owner="BuiltIn">
+<arg>ใช้ค่าจาก YAML: ${filename}</arg>
+<doc>Logs the given message with the given level.</doc>
+<status status="NOT RUN" start="2026-02-10T23:34:12.201772" elapsed="0.000022"/>
+</kw>
+<kw name="Should Be Equal As Strings" owner="BuiltIn">
+<arg>${filename}</arg>
+<arg>GDR_InputFileName.xlsx</arg>
+<doc>Fails if objects are unequal after converting them to strings.</doc>
+<status status="NOT RUN" start="2026-02-10T23:34:12.202015" elapsed="0.000023"/>
+</kw>
+<status status="FAIL" start="2026-02-10T23:34:12.200286" elapsed="0.001983">module object does not have method 'get_from_settings'.</status>
+</test>
+<test id="s1-t3" name="Example 02 Use LDP Environment Variables" line="31">
+<kw name="Get From Settings">
+<kw name="Get Library Instance" owner="BuiltIn">
+<msg time="2026-02-10T23:34:12.203827" level="INFO">${instance} = &lt;module 'data_reader' from 'C:\\Users\\Eiw\\.cursor\\TestDashboard\\PythonProject\\Resources\\pythonLib\\data_reader.py'&gt;</msg>
+<var>${instance}</var>
+<arg>DataReader</arg>
+<doc>Returns the currently active instance of the specified library.</doc>
+<status status="PASS" start="2026-02-10T23:34:12.203675" elapsed="0.000171"/>
+</kw>
+<kw name="Call Method" owner="BuiltIn">
+<msg time="2026-02-10T23:34:12.204112" level="FAIL">module object does not have method 'get_from_settings'.</msg>
+<var>${value}</var>
+<arg>${instance}</arg>
+<arg>get_from_settings</arg>
+<arg>${dotted_path}</arg>
+<arg>${default}</arg>
+<arg>${settings_path}</arg>
+<doc>Calls the named method of the given object with the provided arguments.</doc>
+<status status="FAIL" start="2026-02-10T23:34:12.203929" elapsed="0.000313">module object does not have method 'get_from_settings'.</status>
+</kw>
+<return>
+<value>${value}</value>
+<status status="NOT RUN" start="2026-02-10T23:34:12.204294" elapsed="0.000015"/>
+</return>
+<var>${url}</var>
+<arg>LDP_environment.ldp_base_url</arg>
+<status status="FAIL" start="2026-02-10T23:34:12.203478" elapsed="0.000879">module object does not have method 'get_from_settings'.</status>
+</kw>
+<kw name="Get From Settings">
+<var>${timeout}</var>
+<arg>LDP_environment.timeout</arg>
+<arg>default=30</arg>
+<status status="NOT RUN" start="2026-02-10T23:34:12.204643" elapsed="0.000022"/>
+</kw>
+<kw name="Log" owner="BuiltIn">
+<arg>LDP URL: ${url}, Timeout: ${timeout}</arg>
+<doc>Logs the given message with the given level.</doc>
+<status status="NOT RUN" start="2026-02-10T23:34:12.204955" elapsed="0.000045"/>
+</kw>
+<status status="FAIL" start="2026-02-10T23:34:12.203071" elapsed="0.002268">module object does not have method 'get_from_settings'.</status>
+</test>
+<test id="s1-t4" name="Example 03 Load Section And Use Variables" line="37">
+<kw name="Load Section From Settings">
+<kw name="Get Library Instance" owner="BuiltIn">
+<msg time="2026-02-10T23:34:12.206837" level="INFO">${instance} = &lt;module 'data_reader' from 'C:\\Users\\Eiw\\.cursor\\TestDashboard\\PythonProject\\Resources\\pythonLib\\data_reader.py'&gt;</msg>
+<var>${instance}</var>
+<arg>DataReader</arg>
+<doc>Returns the currently active instance of the specified library.</doc>
+<status status="PASS" start="2026-02-10T23:34:12.206617" elapsed="0.000240"/>
+</kw>
+<kw name="Call Method" owner="BuiltIn">
+<msg time="2026-02-10T23:34:12.207126" level="FAIL">module object does not have method 'load_section_from_settings'.</msg>
+<var>${section_dict}</var>
+<arg>${instance}</arg>
+<arg>load_section_from_settings</arg>
+<arg>${section}</arg>
+<arg>${prefix}</arg>
+<arg>suite</arg>
+<arg>${settings_path}</arg>
+<doc>Calls the named method of the given object with the provided arguments.</doc>
+<status status="FAIL" start="2026-02-10T23:34:12.206930" elapsed="0.000257">module object does not have method 'load_section_from_settings'.</status>
+</kw>
+<return>
+<value>${section_dict}</value>
+<status status="NOT RUN" start="2026-02-10T23:34:12.207239" elapsed="0.000019"/>
+</return>
+<arg>Input_Test_Data</arg>
+<status status="FAIL" start="2026-02-10T23:34:12.206291" elapsed="0.001022">module object does not have method 'load_section_from_settings'.</status>
+</kw>
+<kw name="Log" owner="BuiltIn">
+<arg>ใช้ตัวแปรที่โหลดจาก YAML:</arg>
+<doc>Logs the given message with the given level.</doc>
+<status status="NOT RUN" start="2026-02-10T23:34:12.207569" elapsed="0.000035"/>
+</kw>
+<kw name="Log To Console" owner="BuiltIn">
+<arg>- GDR file: ${INPUT_TEST_DATA_GDR_INPUTFILENAME}</arg>
+<doc>Logs the given message to the console.</doc>
+<status status="NOT RUN" start="2026-02-10T23:34:12.207779" elapsed="0.000030"/>
+</kw>
+<kw name="Log To Console" owner="BuiltIn">
+<arg>- ERT file: ${INPUT_TEST_DATA_ERT_INPUTFILENAME}</arg>
+<doc>Logs the given message to the console.</doc>
+<status status="NOT RUN" start="2026-02-10T23:34:12.208163" elapsed="0.000028"/>
+</kw>
+<status status="FAIL" start="2026-02-10T23:34:12.205879" elapsed="0.002486">module object does not have method 'load_section_from_settings'.</status>
+</test>
+<test id="s1-t5" name="Example 04 Use Multiple Sections From YAML" line="44">
+<kw name="Get From Settings">
+<kw name="Get Library Instance" owner="BuiltIn">
+<msg time="2026-02-10T23:34:12.210284" level="INFO">${instance} = &lt;module 'data_reader' from 'C:\\Users\\Eiw\\.cursor\\TestDashboard\\PythonProject\\Resources\\pythonLib\\data_reader.py'&gt;</msg>
+<var>${instance}</var>
+<arg>DataReader</arg>
+<doc>Returns the currently active instance of the specified library.</doc>
+<status status="PASS" start="2026-02-10T23:34:12.210067" elapsed="0.000238"/>
+</kw>
+<kw name="Call Method" owner="BuiltIn">
+<msg time="2026-02-10T23:34:12.210585" level="FAIL">module object does not have method 'get_from_settings'.</msg>
+<var>${value}</var>
+<arg>${instance}</arg>
+<arg>get_from_settings</arg>
+<arg>${dotted_path}</arg>
+<arg>${default}</arg>
+<arg>${settings_path}</arg>
+<doc>Calls the named method of the given object with the provided arguments.</doc>
+<status status="FAIL" start="2026-02-10T23:34:12.210375" elapsed="0.000279">module object does not have method 'get_from_settings'.</status>
+</kw>
+<return>
+<value>${value}</value>
+<status status="NOT RUN" start="2026-02-10T23:34:12.210700" elapsed="0.000018"/>
+</return>
+<var>${drdb_url}</var>
+<arg>DRDB_environment.drdb_base_url</arg>
+<status status="FAIL" start="2026-02-10T23:34:12.209739" elapsed="0.001052">module object does not have method 'get_from_settings'.</status>
+</kw>
+<kw name="Get From Settings">
+<var>${sms_user}</var>
+<arg>SMSSmart_environment.username</arg>
+<status status="NOT RUN" start="2026-02-10T23:34:12.211501" elapsed="0.000047"/>
+</kw>
+<kw name="Get From Settings">
+<var>${sheet}</var>
+<arg>DRDB_environment.sheet_name</arg>
+<arg>default=Sheet1</arg>
+<status status="NOT RUN" start="2026-02-10T23:34:12.211843" elapsed="0.000023"/>
+</kw>
+<kw name="Log" owner="BuiltIn">
+<arg>DRDB URL=${drdb_url}, SMS user=${sms_user}, Sheet=${sheet}</arg>
+<doc>Logs the given message with the given level.</doc>
+<status status="NOT RUN" start="2026-02-10T23:34:12.212109" elapsed="0.000024"/>
+</kw>
+<status status="FAIL" start="2026-02-10T23:34:12.209051" elapsed="0.003313">module object does not have method 'get_from_settings'.</status>
+</test>
+<test id="s1-t6" name="Example 05 Use ConfigReader For URLs And Test Data" line="51">
+<kw name="Get Ldp Base Url" owner="ConfigReader">
+<msg time="2026-02-10T23:34:12.216902" level="INFO">${ldp_url} = ldp_base_url</msg>
+<var>${ldp_url}</var>
+<status status="PASS" start="2026-02-10T23:34:12.213636" elapsed="0.003340"/>
+</kw>
+<kw name="Get Drdb Base Url" owner="ConfigReader">
+<msg time="2026-02-10T23:34:12.217658" level="INFO">${drdb_url} = drdb_base_url</msg>
+<var>${drdb_url}</var>
+<status status="PASS" start="2026-02-10T23:34:12.217427" elapsed="0.000269"/>
+</kw>
+<kw name="ConfigReader.Get Test Data File">
+<msg time="2026-02-10T23:34:12.220517" level="FAIL">No keyword with name 'ConfigReader.Get Test Data File' found.</msg>
+<var>${test_file}</var>
+<status status="FAIL" start="2026-02-10T23:34:12.220454" elapsed="0.000105">No keyword with name 'ConfigReader.Get Test Data File' found.</status>
+</kw>
+<kw name="Log" owner="BuiltIn">
+<arg>LDP URL: ${ldp_url}, DRDB URL: ${drdb_url}, Test data file: ${test_file}</arg>
+<doc>Logs the given message with the given level.</doc>
+<status status="NOT RUN" start="2026-02-10T23:34:12.220863" elapsed="0.000058"/>
+</kw>
+<status status="FAIL" start="2026-02-10T23:34:12.213225" elapsed="0.008048">No keyword with name 'ConfigReader.Get Test Data File' found.</status>
+</test>
+<status status="FAIL" start="2026-02-10T23:34:08.393366" elapsed="3.828713"/>
+</suite>
+<statistics>
+<total>
+<stat pass="0" fail="6" skip="0">All Tests</stat>
+</total>
+<tag>
+</tag>
+<suite>
+<stat name="Test" id="s1" pass="0" fail="6" skip="0">Test</stat>
+</suite>
+</statistics>
+<errors>
+</errors>
+</robot>
